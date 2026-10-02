@@ -97,6 +97,8 @@ F['app/src/main/AndroidManifest.xml'] = r'''<?xml version="1.0" encoding="utf-8"
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -157,6 +159,19 @@ F['app/src/main/AndroidManifest.xml'] = r'''<?xml version="1.0" encoding="utf-8"
             android:name=".ListenService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <receiver
+            android:name=".InstallReceiver"
+            android:exported="false" />
+
+        <service
+            android:name=".BubbleService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="voice_assistant_overlay" />
+        </service>
     </application>
 </manifest>
 '''
@@ -263,7 +278,7 @@ class ListenService : Service() {
     private var sr: SpeechRecognizer? = null
     private val h = Handler(Looper.getMainLooper())
     private var on = false
-    private val wake = Regex("^\\s*(?:(?:hey|hay|ey|ok|okay)\\s+)?(?:edi|eddi|eddy|edy|эди)\\b[\\s,.:!-]*", RegexOption.IGNORE_CASE)
+    private val wake = Regex("^\\s*(?:(?:hey|hay|ey|ok|okay|hi)\\s+)?(?:edi|eddi|eddy|edy|eddie|edie|эди|еди|ади)\\b[\\s,.:!-]*", RegexOption.IGNORE_CASE)
 
     override fun onBind(i: Intent?): IBinder? = null
 
@@ -303,8 +318,8 @@ class ListenService : Service() {
                 again(if (e == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1500L else 400L)
             }
             override fun onResults(res: Bundle?) {
-                val t = res?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                if (t != null) handle(t)
+                val list = res?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                if (list != null) handle(list)
                 again(300L)
             }
         })
@@ -312,18 +327,28 @@ class ListenService : Service() {
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "uz-UZ")
             .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
         try { r.startListening(it) } catch (e: Exception) { again(1500L) }
     }
 
     private fun again(ms: Long) { if (on) h.postDelayed({ begin() }, ms) }
 
     // Faqat "Edi, ..." bilan boshlangan gaplar buyruq sifatida yuboriladi
-    private fun handle(t: String) {
-        val m = wake.find(t) ?: return
-        val cmd = t.substring(m.range.last + 1).trim()
-        if (cmd.isEmpty()) return
-        val w = MainActivity.web ?: return
-        w.post { w.evaluateJavascript("window.ediVoice&&window.ediVoice(" + JSONObject.quote(cmd) + ")", null) }
+    private fun handle(list: List<String>) {
+        for (t in list) {
+            val m = wake.find(t) ?: continue
+            val cmd = t.substring(m.range.last + 1).trim()
+            if (cmd.isEmpty()) return
+            val q = JSONObject.quote(cmd)
+            val w = MainActivity.web
+            if (w != null) {
+                w.post { w.evaluateJavascript("window.ediVoice&&window.ediVoice(" + q + ")", null) }
+                return
+            }
+            val e = BubbleService.engine
+            if (e != null) e.post { e.evaluateJavascript("window.ediBg&&window.ediBg(" + q + ")", null) }
+            return
+        }
     }
 
     override fun onDestroy() {
@@ -348,6 +373,8 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognizerIntent
 import android.webkit.GeolocationPermissions
 import android.webkit.JsPromptResult
@@ -373,15 +400,18 @@ class MainActivity : Activity() {
         const val RC_WEBPERM = 9003
         const val RC_GEO = 9004
         @Volatile var web: WebView? = null
+        @Volatile var visible = false
 
         // Blob yuklab olishni ushlab, native saqlashga yo'naltiradi
         const val DL_JS = """(function(){if(window.__ediDl)return;window.__ediDl=1;var o=HTMLAnchorElement.prototype.click;HTMLAnchorElement.prototype.click=function(){var a=this;if(a.download&&a.href&&a.href.indexOf('blob:')===0&&window.Android&&window.Android.saveFile){fetch(a.href).then(function(r){return r.blob()}).then(function(b){var f=new FileReader();f.onloadend=function(){window.Android.saveFile(a.download,b.type||'application/octet-stream',String(f.result).split(',')[1])};f.readAsDataURL(b)});return}return o.apply(this,arguments)}})();"""
 
         // Orqaga tugmasi: ochiq oynalarni yopadi
-        const val CLOSE_JS = """(function(){var m=document.querySelector('.prev-mod.on')||document.querySelector('.modal.on')||document.querySelector('.ocr-mod.on');if(!m)return 0;var b=m.querySelector('.cl,.close,[data-close]');if(b){b.click();return 1}m.classList.remove('on');return 1})()"""
+        const val CLOSE_JS = """(function(){var q=[['pmod','pcl'],['ocrmod','ocrcl']];for(var i=0;i<q.length;i++){var m=document.getElementById(q[i][0]);if(m&&m.classList.contains('on')){var b=document.getElementById(q[i][1]);if(b){b.click();return 1}}}var d=document.querySelectorAll('.modal.on');if(d.length){d[d.length-1].classList.remove('on');return 1}return 0})()"""
     }
 
     private lateinit var bridge: Bridge
+    private var pendingQ: String? = null
+    private var loaded = false
     private var fileCb: ValueCallback<Array<Uri>>? = null
     private var pendingWeb: PermissionRequest? = null
     private var pendingGeoOrigin: String? = null
@@ -415,6 +445,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        pendingQ = intent?.getStringExtra("q")
         window.statusBarColor = Color.parseColor("#0a0a0a")
         window.navigationBarColor = Color.parseColor("#0a0a0a")
         val w = WebView(this)
@@ -432,7 +463,7 @@ class MainActivity : Activity() {
         s.textZoom = 100
         s.cacheMode = if (online()) WebSettings.LOAD_DEFAULT else WebSettings.LOAD_CACHE_ELSE_NETWORK
 
-        bridge = Bridge(this, w)
+        bridge = Bridge(this, w, this)
         w.addJavascriptInterface(bridge, "Android")
 
         w.webViewClient = object : WebViewClient() {
@@ -448,7 +479,7 @@ class MainActivity : Activity() {
             }
 
             override fun onPageStarted(v: WebView?, url: String?, f: Bitmap?) { v?.evaluateJavascript(DL_JS, null) }
-            override fun onPageFinished(v: WebView?, url: String?) { v?.evaluateJavascript(DL_JS, null) }
+            override fun onPageFinished(v: WebView?, url: String?) { v?.evaluateJavascript(DL_JS, null); loaded = true; runPending() }
 
             override fun onReceivedError(v: WebView?, r: WebResourceRequest?, e: WebResourceError?) {
                 if (r != null && r.isForMainFrame && v != null && !(v.url ?: "").startsWith("file:")) {
@@ -523,8 +554,30 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        visible = true
         val w = web ?: return
         if ((w.url ?: "").startsWith("file:") && online()) w.loadUrl(URL)
+    }
+
+    override fun onPause() {
+        visible = false
+        super.onPause()
+    }
+
+    override fun onNewIntent(i: Intent?) {
+        super.onNewIntent(i)
+        setIntent(i)
+        pendingQ = i?.getStringExtra("q")
+        if (loaded) runPending()
+    }
+
+    // Suzuvchi tugmadan kelgan matnni Edi chatiga yuboradi
+    private fun runPending() {
+        val q = pendingQ ?: return
+        pendingQ = null
+        Handler(Looper.getMainLooper()).postDelayed({
+            web?.evaluateJavascript("window.ediVoice&&window.ediVoice(" + JSONObject.quote(q) + ")", null)
+        }, 1200L)
     }
 
     fun startListen() {
@@ -598,10 +651,12 @@ import android.app.ActivityManager
 import android.app.AlertDialog
 import android.app.Notification
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
@@ -622,19 +677,24 @@ import android.speech.tts.TextToSpeech
 import android.telecom.TelecomManager
 import android.telephony.SmsManager
 import android.util.Base64
+import android.view.ContextThemeWrapper
 import android.view.KeyEvent
+import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.widget.Toast
 import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-class Bridge(private val activity: MainActivity, private val web: WebView) {
-    private val ctx: Context = activity.applicationContext
+class Bridge(base: Context, private val web: WebView, private val activity: MainActivity?) {
+    private val ctx: Context = base.applicationContext
+    var onBg: ((String, Boolean) -> Unit)? = null
     private val ui = Handler(Looper.getMainLooper())
     private val audio = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -665,11 +725,16 @@ class Bridge(private val activity: MainActivity, private val web: WebView) {
         val ok = AtomicBoolean(false)
         ui.post {
             try {
-                AlertDialog.Builder(activity).setMessage(msg)
+                val a = activity
+                val useAct = a != null && MainActivity.visible && !a.isFinishing
+                val b = if (a != null && useAct) AlertDialog.Builder(a) else AlertDialog.Builder(ContextThemeWrapper(ctx, android.R.style.Theme_DeviceDefault_Dialog_Alert))
+                val d = b.setMessage(msg)
                     .setPositiveButton("Ha") { _, _ -> ok.set(true); latch.countDown() }
                     .setNegativeButton("Yo'q") { _, _ -> latch.countDown() }
                     .setOnCancelListener { latch.countDown() }
-                    .show()
+                    .create()
+                if (!useAct) d.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+                d.show()
             } catch (e: Exception) { latch.countDown() }
         }
         latch.await(30, TimeUnit.SECONDS)
@@ -711,7 +776,7 @@ class Bridge(private val activity: MainActivity, private val web: WebView) {
                 if (sp != null) {
                     val i = Intent(sp)
                     if (id == "overlay" || id == "writesettings") i.data = Uri.parse("package:" + ctx.packageName)
-                    activity.startActivity(i)
+                    start(i)
                 } else {
                     val p = rt[id]
                     if (p == null) {
@@ -719,7 +784,13 @@ class Bridge(private val activity: MainActivity, private val web: WebView) {
                     } else {
                         val c = nextCode++
                         codes[c] = id
-                        activity.requestPermissions(arrayOf(p), c)
+                        val a = activity
+                        if (a == null) {
+                            toast("🔐 Ruxsat uchun Edi ilovasini oching")
+                            permJs(id, false, false)
+                        } else {
+                            a.requestPermissions(arrayOf(p), c)
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -732,7 +803,7 @@ class Bridge(private val activity: MainActivity, private val web: WebView) {
     fun openAppSettings() {
         ui.post {
             val i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName))
-            activity.startActivity(i)
+            start(i)
         }
     }
 
@@ -740,7 +811,8 @@ class Bridge(private val activity: MainActivity, private val web: WebView) {
         val id = codes.remove(code) ?: return
         val ok = res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED
         val p = rt[id]
-        val blocked = !ok && p != null && !activity.shouldShowRequestPermissionRationale(p)
+        val a = activity
+        val blocked = !ok && p != null && a != null && !a.shouldShowRequestPermissionRationale(p)
         permJs(id, ok, blocked)
     }
 
@@ -789,7 +861,7 @@ class Bridge(private val activity: MainActivity, private val web: WebView) {
     @JavascriptInterface
     fun takePhoto() {
         ui.post {
-            try { activity.startActivity(Intent(MediaStore.ACTION_IMAGE_CAPTURE)) }
+            try { start(Intent(MediaStore.ACTION_IMAGE_CAPTURE)) }
             catch (e: Exception) { toast("❌ Kamera ochilmadi") }
         }
     }
@@ -798,7 +870,7 @@ class Bridge(private val activity: MainActivity, private val web: WebView) {
     fun overlay() {
         ui.post {
             val i = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName))
-            activity.startActivity(i)
+            start(i)
         }
     }
 
@@ -833,7 +905,7 @@ class Bridge(private val activity: MainActivity, private val web: WebView) {
     }
 
     @JavascriptInterface
-    fun listen() { ui.post { activity.startListen() } }
+    fun listen() { ui.post { activity?.startListen() } }
 
     @JavascriptInterface
     fun loop(on: Boolean) {
@@ -849,6 +921,132 @@ class Bridge(private val activity: MainActivity, private val web: WebView) {
                     ctx.stopService(Intent(ctx, ListenService::class.java))
                 }
             } catch (e: Exception) { toast("❌ Tinglash boshlanmadi: " + e.message) }
+        }
+    }
+
+    // ------------------------------------------------------------ ilova ichidan yangilash
+    private val repo = "lutfullossr-creator/Edi"
+
+    @Suppress("DEPRECATION")
+    private fun curCode(): Int {
+        val pi = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+        return if (Build.VERSION.SDK_INT >= 28) pi.longVersionCode.toInt() else pi.versionCode
+    }
+
+    private fun curName(): String {
+        return ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "?"
+    }
+
+    private fun upd(m: String) { js("window.ediUpd&&window.ediUpd(" + JSONObject.quote(m) + ")") }
+
+    // (versiya raqami, teg, apk havolasi)
+    private fun latest(): Triple<Int, String, String> {
+        val c = URL("https://api.github.com/repos/" + repo + "/releases/latest").openConnection() as HttpURLConnection
+        c.connectTimeout = 10000
+        c.readTimeout = 15000
+        c.setRequestProperty("Accept", "application/vnd.github+json")
+        c.setRequestProperty("User-Agent", "EdiApp")
+        if (c.responseCode != 200) throw Exception("GitHub javobi: " + c.responseCode)
+        val j = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+        val tag = j.optString("tag_name", "")
+        val n = Regex("(\\d+)$").find(tag)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        var url = ""
+        val arr = j.optJSONArray("assets")
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                val a = arr.getJSONObject(i)
+                if (a.optString("name").endsWith(".apk")) { url = a.optString("browser_download_url"); break }
+            }
+        }
+        return Triple(n, tag, url)
+    }
+
+    private fun download(url: String, f: File) {
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 15000
+        c.readTimeout = 30000
+        c.setRequestProperty("User-Agent", "EdiApp")
+        if (c.responseCode !in 200..299) throw Exception("Yuklab bo'lmadi: " + c.responseCode)
+        c.inputStream.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+    }
+
+    private fun install(f: File) {
+        val pi = ctx.packageManager.packageInstaller
+        val p = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        p.setSize(f.length())
+        val id = pi.createSession(p)
+        val ses = pi.openSession(id)
+        ses.openWrite("edi.apk", 0L, f.length()).use { o ->
+            f.inputStream().use { it.copyTo(o) }
+            ses.fsync(o)
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+        val pend = PendingIntent.getBroadcast(ctx, id, Intent(ctx, InstallReceiver::class.java), flags)
+        ses.commit(pend.intentSender)
+        ses.close()
+    }
+
+    private fun updateFlow(mode: String) {
+        try {
+            val l = latest()
+            val cur = curCode()
+            if (l.first <= cur) {
+                if (mode != "auto") upd("✅ Eng so'nggi versiya (" + curName() + ")")
+                return
+            }
+            if (mode != "install") {
+                upd("🆕 Yangi versiya: " + l.second + " (hozir " + curName() + "). «ilovani yangila» deb ayting")
+                return
+            }
+            if (l.third.isEmpty()) { upd("❌ Yangi versiyada APK fayl topilmadi"); return }
+            if (!confirm("Edi " + l.second + " tayyor. Yuklab o'rnatilsinmi?")) { upd("↩️ Bekor qilindi"); return }
+            if (!ctx.packageManager.canRequestPackageInstalls()) {
+                start(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + ctx.packageName)))
+                upd("🔒 «Shu manbadan o'rnatish»ni yoqing, keyin «ilovani yangila» deb qayta ayting")
+                return
+            }
+            upd("⬇️ Yuklanmoqda…")
+            val f = File(ctx.cacheDir, "edi_update.apk")
+            download(l.third, f)
+            upd("📲 O'rnatish oynasi ochilmoqda…")
+            install(f)
+        } catch (e: Exception) {
+            if (mode != "auto") upd("❌ Yangilash xatosi: " + (e.message ?: "noma'lum"))
+        }
+    }
+
+    @JavascriptInterface
+    fun version(): String = curName()
+
+    @JavascriptInterface
+    fun update(mode: String): String {
+        Thread { updateFlow(mode) }.start()
+        return ""
+    }
+
+    // ------------------------------------------------------------ kalit, til, suzuvchi tugma
+    @JavascriptInterface
+    fun setKey(k: String) { Stt.setKey(ctx, k) }
+
+    @JavascriptInterface
+    fun setVoiceLang(l: String) { Stt.setLang(ctx, l) }
+
+    @JavascriptInterface
+    fun bgDone(msg: String, isCmd: Boolean) { onBg?.invoke(msg, isCmd) }
+
+    @JavascriptInterface
+    fun bubble(on: Boolean): String {
+        try {
+            if (on) {
+                if (!Settings.canDrawOverlays(ctx)) return "🔒 «Boshqa ilovalar ustida» ruxsati yo'q. «ruxsatlar» deb ayting"
+                if (ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return "🔒 Mikrofon ruxsati kerak"
+                ctx.startForegroundService(Intent(ctx, BubbleService::class.java))
+                return "🎙 Suzuvchi tugma yoqildi. Bosing va gapiring. Ushlab turib o'chirasiz"
+            }
+            ctx.stopService(Intent(ctx, BubbleService::class.java))
+            return "🎙 Suzuvchi tugma o'chirildi"
+        } catch (e: Exception) {
+            return "❌ " + (e.message ?: "xato")
         }
     }
 
@@ -1188,6 +1386,510 @@ class Bridge(private val activity: MainActivity, private val web: WebView) {
             "music" -> return music(a)
         }
         return "❓ Noma'lum buyruq: " + n
+    }
+}
+'''
+
+F[KT + 'Stt.kt'] = r'''package com.lutfullo.edi
+
+import android.content.Context
+import org.json.JSONObject
+import java.io.DataOutputStream
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+
+object Stt {
+    const val PROMPT = "Edi, fonar yoq, musiqa qo'y, ovozni balandla, ilovani och, qo'ng'iroq qil, sms yoz, skrinshot ol, yorqinlik, kontakt top, tarjima qil."
+
+    private fun sp(c: Context) = c.getSharedPreferences("edi", Context.MODE_PRIVATE)
+    fun key(c: Context): String = sp(c).getString("qk", "") ?: ""
+    fun setKey(c: Context, k: String) { sp(c).edit().putString("qk", k).apply() }
+    fun lang(c: Context): String = sp(c).getString("vl", "uz") ?: "uz"
+    fun setLang(c: Context, l: String) { sp(c).edit().putString("vl", l).apply() }
+
+    // Groq Whisper: ovozni matnga aylantiradi (fon oqimida chaqiring)
+    fun whisper(key: String, f: File, lang: String): String {
+        var err = "noma'lum xato"
+        for (model in arrayOf("whisper-large-v3", "whisper-large-v3-turbo")) {
+            try {
+                val b = "----edi" + System.currentTimeMillis()
+                val c = URL("https://api.groq.com/openai/v1/audio/transcriptions").openConnection() as HttpURLConnection
+                c.requestMethod = "POST"
+                c.doOutput = true
+                c.connectTimeout = 15000
+                c.readTimeout = 40000
+                c.setRequestProperty("Authorization", "Bearer " + key)
+                c.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + b)
+                val o = DataOutputStream(c.outputStream)
+                fun w(s: String) { o.write(s.toByteArray(Charsets.UTF_8)) }
+                fun part(n: String, v: String) {
+                    w("--" + b + "\r\nContent-Disposition: form-data; name=\"" + n + "\"\r\n\r\n" + v + "\r\n")
+                }
+                part("model", model)
+                part("response_format", "json")
+                part("temperature", "0")
+                if (lang != "auto") part("language", lang)
+                if (lang == "uz" || lang == "auto") part("prompt", PROMPT)
+                w("--" + b + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"cmd.m4a\"\r\nContent-Type: audio/mp4\r\n\r\n")
+                o.write(f.readBytes())
+                w("\r\n--" + b + "--\r\n")
+                o.flush()
+                o.close()
+                val code = c.responseCode
+                val stream = if (code in 200..299) c.inputStream else c.errorStream
+                val body = if (stream != null) stream.bufferedReader().use { it.readText() } else ""
+                if (code in 200..299) return JSONObject(body).optString("text", "").trim()
+                if (code == 401) { err = "Groq kaliti noto'g'ri"; break }
+                err = "HTTP " + code + (if (code == 429) " (limit tugadi, biroz kuting)" else "")
+            } catch (e: Exception) {
+                err = e.message ?: "tarmoq xatosi"
+            }
+        }
+        throw Exception(err)
+    }
+}
+'''
+
+F[KT + 'Rec.kt'] = r'''package com.lutfullo.edi
+
+import android.content.Context
+import android.media.MediaRecorder
+import android.os.Build
+import android.os.Handler
+import java.io.File
+
+// Ovozni yozadi va jim qolganda o'zi to'xtaydi
+class Rec(private val ctx: Context, private val h: Handler, private val f: File, private val done: (Boolean) -> Unit) {
+    private var mr: MediaRecorder? = null
+    private var t0 = 0L
+    private var lastVoice = 0L
+    private var heard = false
+    private var base = 0
+    private var n = 0
+
+    private val poll = object : Runnable {
+        override fun run() {
+            val m = mr ?: return
+            val amp = try { m.maxAmplitude } catch (e: Exception) { 0 }
+            val now = System.currentTimeMillis()
+            val el = now - t0
+            if (el < 500) {
+                base += amp
+                n += 1
+            } else {
+                val th = Math.max(1500, (base / Math.max(n, 1)) * 3)
+                if (amp > th) { heard = true; lastVoice = now }
+            }
+            if ((heard && now - lastVoice > 1300) || el > 15000 || (!heard && el > 7000)) { finish(); return }
+            h.postDelayed(this, 120L)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    fun start(): Boolean {
+        return try {
+            val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(ctx) else MediaRecorder()
+            r.setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
+            r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            r.setAudioSamplingRate(16000)
+            r.setAudioEncodingBitRate(64000)
+            r.setAudioChannels(1)
+            r.setOutputFile(f.absolutePath)
+            r.prepare()
+            r.start()
+            mr = r
+            t0 = System.currentTimeMillis()
+            h.postDelayed(poll, 150L)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun cancel() {
+        h.removeCallbacks(poll)
+        try { mr?.release() } catch (e: Exception) {}
+        mr = null
+    }
+
+    private fun finish() {
+        val r = mr ?: return
+        mr = null
+        var ok = heard
+        try { r.stop() } catch (e: Exception) { ok = false }
+        try { r.release() } catch (e: Exception) {}
+        done(ok && f.length() > 800L)
+    }
+}
+'''
+
+F[KT + 'BubbleService.kt'] = r'''package com.lutfullo.edi
+
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.provider.Settings
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.LinearLayout
+import android.widget.TextView
+import org.json.JSONObject
+import java.io.File
+
+// Boshqa ilovalar ustida suzuvchi mikrofon tugmasi + fon dvigateli (yashirin WebView)
+class BubbleService : Service() {
+    companion object {
+        @Volatile var engine: WebView? = null
+    }
+
+    private lateinit var wm: WindowManager
+    private var root: LinearLayout? = null
+    private var btn: TextView? = null
+    private var msg: TextView? = null
+    private val h = Handler(Looper.getMainLooper())
+    private var busy = false
+    private var rec: Rec? = null
+    private var sr: SpeechRecognizer? = null
+    private var guard: Runnable? = null
+    private var pendingText = ""
+    private val hideR = Runnable { msg?.visibility = View.GONE }
+
+    override fun onBind(i: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        wm = getSystemService(WINDOW_SERVICE) as WindowManager
+    }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    override fun onStartCommand(i: Intent?, f: Int, id: Int): Int {
+        startFg()
+        if (!Settings.canDrawOverlays(this)) { stopSelf(); return START_NOT_STICKY }
+        if (root == null) {
+            buildEngine()
+            buildBubble()
+        }
+        return START_STICKY
+    }
+
+    private fun startFg() {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel("edi_bubble", "Edi suzuvchi tugma", NotificationManager.IMPORTANCE_LOW))
+        val pi = PendingIntent.getActivity(this, 1, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val n = Notification.Builder(this, "edi_bubble")
+            .setContentTitle("Edi suzuvchi tugma yoqilgan")
+            .setContentText("Tugmani ushlab turib o'chirasiz")
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentIntent(pi)
+            .setOngoing(true)
+            .build()
+        if (Build.VERSION.SDK_INT >= 34) startForeground(78, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        else startForeground(78, n)
+    }
+
+    private fun buildEngine() {
+        val w = WebView(applicationContext)
+        val s = w.settings
+        s.javaScriptEnabled = true
+        s.domStorageEnabled = true
+        s.databaseEnabled = true
+        s.mediaPlaybackRequiresUserGesture = false
+        s.cacheMode = WebSettings.LOAD_DEFAULT
+        val b = Bridge(applicationContext, w, null)
+        b.onBg = { m, c -> h.post { onResult(m, c) } }
+        w.addJavascriptInterface(b, "Android")
+        w.webViewClient = WebViewClient()
+        val lp = WindowManager.LayoutParams(
+            1, 1, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        lp.gravity = Gravity.TOP or Gravity.START
+        wm.addView(w, lp)
+        w.loadUrl(MainActivity.URL + "?bg=1")
+        engine = w
+    }
+
+    private fun buildBubble() {
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.gravity = Gravity.CENTER_HORIZONTAL
+
+        val t = TextView(this)
+        t.text = "🎙"
+        t.textSize = 24f
+        t.gravity = Gravity.CENTER
+        val bg = GradientDrawable()
+        bg.shape = GradientDrawable.OVAL
+        bg.setColor(Color.parseColor("#2563EB"))
+        bg.setStroke(dp(2), Color.WHITE)
+        t.background = bg
+        col.addView(t, LinearLayout.LayoutParams(dp(56), dp(56)))
+
+        val m = TextView(this)
+        m.setTextColor(Color.WHITE)
+        m.textSize = 13f
+        m.setPadding(dp(10), dp(6), dp(10), dp(6))
+        m.maxWidth = dp(260)
+        val mb = GradientDrawable()
+        mb.cornerRadius = dp(12).toFloat()
+        mb.setColor(Color.parseColor("#E6111111"))
+        m.background = mb
+        m.visibility = View.GONE
+        val mlp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        mlp.topMargin = dp(6)
+        col.addView(m, mlp)
+
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        lp.gravity = Gravity.TOP or Gravity.START
+        lp.x = dp(12)
+        lp.y = dp(220)
+
+        t.setOnTouchListener(object : View.OnTouchListener {
+            var sx = 0
+            var sy = 0
+            var tx = 0f
+            var ty = 0f
+            var moved = false
+            var closed = false
+            val lpr = Runnable {
+                if (!moved) { closed = true; stopSelf() }
+            }
+
+            override fun onTouch(v: View, e: MotionEvent): Boolean {
+                when (e.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        sx = lp.x; sy = lp.y; tx = e.rawX; ty = e.rawY; moved = false; closed = false
+                        h.postDelayed(lpr, 900L)
+                        return true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = (e.rawX - tx).toInt()
+                        val dy = (e.rawY - ty).toInt()
+                        if (Math.abs(dx) > dp(6) || Math.abs(dy) > dp(6)) { moved = true; h.removeCallbacks(lpr) }
+                        if (moved) {
+                            lp.x = sx + dx
+                            lp.y = sy + dy
+                            try { wm.updateViewLayout(col, lp) } catch (x: Exception) {}
+                        }
+                        return true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        h.removeCallbacks(lpr)
+                        if (!moved && !closed) onTap()
+                        return true
+                    }
+                }
+                return false
+            }
+        })
+
+        wm.addView(col, lp)
+        root = col
+        btn = t
+        msg = m
+    }
+
+    private fun say(text: String) {
+        val m = msg ?: return
+        m.text = text
+        m.visibility = View.VISIBLE
+        h.removeCallbacks(hideR)
+        h.postDelayed(hideR, 6000L)
+    }
+
+    private fun setBtn(listening: Boolean) { btn?.text = if (listening) "🔴" else "🎙" }
+
+    private fun onTap() {
+        if (busy) return
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            say("🔐 Mikrofon ruxsati yo'q. Edi ni oching")
+            return
+        }
+        busy = true
+        setBtn(true)
+        say("🎤 Gapiring…")
+        val key = Stt.key(this)
+        if (key.isNotEmpty()) recordWhisper(key) else recognizeGoogle()
+    }
+
+    private fun recordWhisper(key: String) {
+        val f = File(cacheDir, "cmd.m4a")
+        val r = Rec(this, h, f) { ok ->
+            setBtn(false)
+            if (!ok) {
+                busy = false
+                say("🤷 Ovoz eshitilmadi")
+            } else {
+                say("🔄 Tanilmoqda…")
+                Thread {
+                    try {
+                        val t = Stt.whisper(key, f, Stt.lang(this))
+                        h.post { handleText(t) }
+                    } catch (e: Exception) {
+                        h.post { busy = false; say("⚠️ " + (e.message ?: "xato")) }
+                    }
+                }.start()
+            }
+        }
+        rec = r
+        if (!r.start()) {
+            busy = false
+            setBtn(false)
+            say("❌ Mikrofon ochilmadi")
+        }
+    }
+
+    // Groq kaliti bo'lmasa: Google ovoz tanish (kamroq aniq)
+    private fun recognizeGoogle() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            busy = false
+            setBtn(false)
+            say("❌ Ovoz tanish xizmati yo'q. Edi sozlamalariga Groq kalitini kiriting")
+            return
+        }
+        val r = SpeechRecognizer.createSpeechRecognizer(this)
+        sr = r
+        r.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(p: Bundle?) {}
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(v: Float) {}
+            override fun onBufferReceived(b: ByteArray?) {}
+            override fun onEndOfSpeech() {}
+            override fun onPartialResults(p: Bundle?) {}
+            override fun onEvent(t: Int, p: Bundle?) {}
+            override fun onError(e: Int) {
+                try { r.destroy() } catch (x: Exception) {}
+                busy = false
+                setBtn(false)
+                say("🤷 Ovoz eshitilmadi")
+            }
+            override fun onResults(res: Bundle?) {
+                val t = res?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: ""
+                try { r.destroy() } catch (x: Exception) {}
+                setBtn(false)
+                handleText(t)
+            }
+        })
+        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "uz-UZ")
+        try { r.startListening(i) } catch (e: Exception) { busy = false; setBtn(false) }
+    }
+
+    private fun handleText(t0: String) {
+        val t = t0.trim()
+        if (t.isEmpty()) {
+            busy = false
+            say("🤷 Ovoz tanilmadi")
+            return
+        }
+        say("🗣 " + t)
+        pendingText = t
+        val e = engine
+        if (e == null) {
+            busy = false
+            openEdi(t)
+            return
+        }
+        e.evaluateJavascript("window.ediBg?window.ediBg(" + JSONObject.quote(t) + "):Android.bgDone('',false)", null)
+        val g = Runnable {
+            if (busy) {
+                busy = false
+                say("⚠️ Dvigatel javob bermadi, Edi ni bir marta oching")
+            }
+        }
+        guard = g
+        h.postDelayed(g, 20000L)
+    }
+
+    private fun onResult(m: String, isCmd: Boolean) {
+        guard?.let { h.removeCallbacks(it) }
+        busy = false
+        if (isCmd) say(m.take(220)) else openEdi(pendingText)
+    }
+
+    private fun openEdi(q: String) {
+        try {
+            val i = Intent(this, MainActivity::class.java)
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            i.putExtra("q", q)
+            startActivity(i)
+        } catch (e: Exception) {
+            say("❌ Edi ochilmadi")
+        }
+    }
+
+    override fun onDestroy() {
+        h.removeCallbacksAndMessages(null)
+        rec?.cancel()
+        try { sr?.destroy() } catch (e: Exception) {}
+        try { root?.let { wm.removeView(it) } } catch (e: Exception) {}
+        try {
+            val e = engine
+            if (e != null) { wm.removeView(e); e.destroy() }
+        } catch (e: Exception) {}
+        root = null
+        engine = null
+        super.onDestroy()
+    }
+}
+'''
+
+
+F[KT + 'InstallReceiver.kt'] = r'''package com.lutfullo.edi
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageInstaller
+import android.widget.Toast
+
+// O'rnatish natijasini qabul qiladi (yangilash uchun)
+class InstallReceiver : BroadcastReceiver() {
+    @Suppress("DEPRECATION")
+    override fun onReceive(c: Context, i: Intent) {
+        val st = i.getIntExtra(PackageInstaller.EXTRA_STATUS, -1)
+        if (st == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            val a = i.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+            if (a != null) {
+                a.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                try { c.startActivity(a) } catch (e: Exception) {}
+            }
+        } else if (st != PackageInstaller.STATUS_SUCCESS) {
+            val m = i.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: st.toString()
+            Toast.makeText(c, "❌ O'rnatilmadi: " + m, Toast.LENGTH_LONG).show()
+        }
     }
 }
 '''
