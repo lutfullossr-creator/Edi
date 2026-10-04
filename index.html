@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#0a0a0a">
 <title>Edi</title>
-<meta name="edi-build" content="2026100405">
+<meta name="edi-build" content="2026100408">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <style>
@@ -384,6 +384,35 @@ input[type=range]::-moz-range-thumb{width:28px;height:28px;border:0;border-radiu
 .ln{padding:3px 0;border-top:.5px solid rgba(255,255,255,.07);white-space:pre-wrap;word-break:break-word;color:#d4d4d8}
 .ln.warn{color:#fbbf24}.ln.error{color:#ff6b6b}.ln.info{color:#7dd3fc}.ln.mu{color:var(--t3);border:0}
 @media (prefers-reduced-motion:reduce){.sheet,.prev-mod{transition-duration:.01s!important}}
+
+.ab{margin-top:18px;padding:16px;border-radius:20px;background:var(--bg3);animation:ab-in .5s cubic-bezier(.32,.72,0,1) both}
+.ab-hd{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.ab-logo{width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#7c4dff,#0a84ff);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(10,132,255,.35)}
+.ab-nm b{display:block;font-size:20px;font-weight:700;letter-spacing:-.3px;color:var(--t)}
+.ab-nm small,.ab small{display:block;font-size:12.5px;color:var(--t2);font-weight:500;line-height:1.35;margin-top:2px}
+.ab-h{font-size:12px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--t2);margin:14px 4px 8px}
+.ab-me{border-radius:14px;background:var(--bg2);overflow:hidden}
+.ab-row{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;font-size:14px;color:var(--t)}
+.ab-row+.ab-row{border-top:1px solid var(--sep)}
+.ab-row b{display:block;font-size:15px;font-weight:600}
+.ab-mi{flex:0 0 32px;width:32px;height:32px;border-radius:10px;background:rgba(10,132,255,.14);color:#0a84ff;display:flex;align-items:center;justify-content:center}
+.ab-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.ab-tags i{font-style:normal;font-size:12px;font-weight:600;padding:5px 10px;border-radius:99px;background:var(--bg2);color:var(--t2)}
+.ab-lk,.ab-sup{display:flex;align-items:center;gap:12px;width:100%;border:0;text-align:left;cursor:pointer;font-family:inherit;transition:transform .15s}
+.ab-lk{padding:10px 12px;border-radius:14px;background:var(--bg2);color:var(--t);margin-bottom:8px}
+.ab-lk:active,.ab-sup:active{transform:scale(.97)}
+.ab-tx{flex:1;min-width:0}.ab-tx b{display:block;font-size:15px;font-weight:600}
+.ab-ti{flex:0 0 38px;width:38px;height:38px;border-radius:12px;color:#fff;display:flex;align-items:center;justify-content:center}
+.ab-ti.tg{background:linear-gradient(135deg,#37aee2,#1e96c8)}.ab-ti.ig{background:linear-gradient(45deg,#f9a03f,#e1306c 55%,#833ab4)}.ab-ti.ng{background:linear-gradient(135deg,#7c4dff,#0a84ff)}
+.ab-ch{color:var(--t3)}
+.ab-sup{margin-top:6px;padding:14px 16px;border-radius:18px;background:linear-gradient(135deg,#0a84ff,#5e5ce6);color:#fff;box-shadow:0 8px 22px rgba(10,132,255,.35);position:relative;overflow:hidden}
+.ab-sup small{color:rgba(255,255,255,.85)}
+.ab-sup b{font-size:16px!important}
+.ab-si{flex:0 0 44px;width:44px;height:44px;border-radius:14px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center}
+.ab-sup::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.28),transparent);transform:skewX(-18deg);animation:eu-shine 3.4s ease-in-out infinite}
+.ab-ft{text-align:center;font-size:11.5px;color:var(--t3);margin-top:14px}
+@keyframes ab-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.ab,.ab-sup::after{animation:none!important}}
 </style>
 </head>
 <body>
@@ -592,9 +621,25 @@ input[type=range]::-moz-range-thumb{width:28px;height:28px;border:0;border-radiu
       <button class="fbtn" id="expall"><svg class="icon" aria-hidden="true"><use href="#i-save"></use></svg> Barcha suhbatlarni saqlash (.json)</button>
       <button class="fbtn" id="imp"><svg class="icon" aria-hidden="true"><use href="#i-import"></use></svg> Suhbatlarni import qilish</button>
       <button class="fbtn" id="exp"><svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg> Suhbatni yuklab olish (.md)</button>
-      <button class="fbtn danger" id="kdel"><svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg> Kalitni o'chirish</button>
       <p class="fnote"><svg class="icon sm" aria-hidden="true"><use href="#i-mic"></use></svg> <span><b>Ovoz → matn:</b> Groq kaliti bilan Whisper AI (o'zbekcha ham) ishlatiladi. Aks holda brauzerning o'z texnologiyasi.</span></p>
       <p class="fnote"><svg class="icon sm" aria-hidden="true"><use href="#i-lock"></use></svg> <span>Kalitlar AES-256 bilan shifrlangan holda faqat shu qurilmada saqlanadi.</span></p>
+      <div class="ab" id="about">
+        <div class="ab-hd"><div class="ab-logo"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5.5h14a2 2 0 012 2v8a2 2 0 01-2 2h-6.5L8 20.5V17.5H5a2 2 0 01-2-2v-8a2 2 0 012-2z"/><path d="M9 11v.01M15 11v.01"/></svg></div><div class="ab-nm"><b>Edi</b><small id="ab_ver">Sun'iy intellekt yordamchi</small></div></div>
+        <div class="ab-h">Men haqimda</div>
+        <div class="ab-me">
+          <div class="ab-row"><span class="ab-mi"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6"/><path d="M4.8 20c.8-3.6 3.7-5.6 7.2-5.6s6.4 2 7.2 5.6"/></svg></span><span><b>Lutfullo</b><small>Mustaqil dasturchi va kontent yaratuvchi</small></span></div>
+          <div class="ab-row"><span class="ab-mi"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s6.5-5.6 6.5-11a6.5 6.5 0 10-13 0C5.5 15.4 12 21 12 21z"/><circle cx="12" cy="10" r="2.3"/></svg></span><span><b>Tojikiston</b><small>Telefondan turib ishlayman — hammasi mobil uchun</small></span></div>
+          <div class="ab-row"><span class="ab-mi"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 7L3.5 12l5 5M15.5 7l5 5-5 5M13.5 5l-3 14"/></svg></span><span><b>Nimalar yarataman</b><small>Mobil veb-ilovalar, Telegram botlar va mini-ilovalar, Firebase asosidagi ijtimoiy tarmoqlar, Minecraft Bedrock addonlari</small></span></div>
+        </div>
+        <div class="ab-tags"><i>Veb-ilovalar</i><i>Telegram bot</i><i>Mini App</i><i>Firebase</i><i>Minecraft addon</i><i>Android</i></div>
+        <div class="ab-h">Havolalar</div>
+        <button class="ab-lk" data-u="https://t.me/Lutfullosst"><span class="ab-ti tg"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 4.5L2.8 11.7l5.4 2 2 6.3 3-3.7 4.9 3.6z"/><path d="M8.2 13.7l9.3-6.4"/></svg></span><span class="ab-tx"><b>Telegram</b><small>@Lutfullosst</small></span><span class="ab-ch"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg></span></button>
+        <button class="ab-lk" data-u="https://www.instagram.com/lutfullo.13l"><span class="ab-ti ig"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.2" y="3.2" width="17.6" height="17.6" rx="5.2"/><circle cx="12" cy="12" r="4"/><path d="M17.3 6.8v.01"/></svg></span><span class="ab-tx"><b>Instagram</b><small>@lutfullo.13l</small></span><span class="ab-ch"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg></span></button>
+        <button class="ab-lk" data-u="https://nanogrampro.netlify.app/"><span class="ab-ti ng"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 016.5 4h11A2.5 2.5 0 0120 6.5v8a2.5 2.5 0 01-2.5 2.5H11l-4.5 3.5V17A2.5 2.5 0 014 14.5z"/><path d="M9 13V8.5l6 4.5V8.5"/></svg></span><span class="ab-tx"><b>NanoGram</b><small>nanogrampro.netlify.app</small></span><span class="ab-ch"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg></span></button>
+        <button class="ab-sup" data-u="https://t.me/Lutfullosst"><span class="ab-si"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.6"/><rect x="17" y="14" width="4" height="6" rx="1.6"/><path d="M19 20.2c0 1.4-2.2 1.8-5 1.8"/></svg></span><span class="ab-tx"><b>Qo'llab-quvvatlash</b><small>Savol, xato yoki taklif — to'g'ridan-to'g'ri yozing</small></span></button>
+        <div class="ab-ft">© 2026 Lutfullo · Edi <span id="ab_bld"></span></div>
+      </div>
+      <button class="fbtn danger" id="kdel"><svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg> Kalitni o'chirish</button>
     </div>
   </div>
 </div>
@@ -2185,7 +2230,7 @@ function buttons(list){
   b.onclick=async()=>{try{await fn()}catch(e){line('err','❌',e.message||String(e));buttons([['⬅️ Orqaga',home],['Yopish',close]])}}})}
 
 // ---------- bosh oyna
-window.EDI_WEB_VER='2026.10.04';
+window.EDI_WEB_VER='2026.10.04 · build '+((document.querySelector('meta[name=edi-build]')||{}).content||'?');
 async function home(){
  clearLog();busy=false;
  const my=tkGet(),inst=instNum();
@@ -2245,9 +2290,10 @@ async function filesFlow(){
  clearLog();line('p','📂','Yangilanadigan fayl(lar)ni tanlang: index.html va/yoki make_apk.py');buttons([['📂 Fayllarni tanlash',doPick,true],['⬅️ Orqaga',home]])}
 async function doPick(){
  const tk=tkGet();buttons([]);
+ line('pk','⏳','Fayl tanlash oynasi ochilmoqda…');
  const fs=await pickFiles();
- if(!fs.length){home();return}
- clearLog();const jobs=[];
+ if(!fs.length){clearLog();line('pk','⚠️','Fayl tanlanmadi. Qayta urinib ko‘ring');buttons([['⬆️ Yana tanlash',doPick,true,'index.html va make_apk.py'],['⬅️ Orqaga',home]]);return}
+ clearLog();line('rd','⏳',fs.length+' ta fayl o‘qilmoqda…');await sleepU(300);const jobs=[];
  for(const f of fs){
   const k=kindOf(f);
   if(!k){line('b'+f.name,'⚠️',f.name+' — Edi fayli emas (na index.html, na make_apk.py), o‘tkazib yuboriladi');continue}
@@ -2461,6 +2507,16 @@ sh.addEventListener('touchstart',function(e){if(!(e.target.closest('.mhd')||e.ta
 sh.addEventListener('touchmove',function(e){if(!on)return;dy=Math.max(0,e.touches[0].clientY-y0);sh.style.transform='translateY('+dy+'px)'},{passive:true});
 function end(){if(!on)return;on=false;var v=dy/Math.max(1,Date.now()-t0);sh.style.transition='';sh.style.transform='';if(dy>110||(dy>40&&v>.5)){var b=sh.querySelector('.mhd button');if(b)b.click();else m.classList.remove('on')}dy=0}
 sh.addEventListener('touchend',end,{passive:true});sh.addEventListener('touchcancel',end,{passive:true})})})();
+
+// ===== Men haqimda: havolalar va versiya =====
+(function(){try{
+ const go=u=>{try{if(window.Android&&Android.act){Android.act('url',u);return}}catch(e){}window.open(u,'_blank')};
+ document.querySelectorAll('#about [data-u]').forEach(b=>b.onclick=()=>go(b.dataset.u));
+ const fill=()=>{try{const v=window.Android&&Android.version?Android.version():'';const m=document.querySelector('meta[name=edi-build]');
+  const e=document.getElementById('ab_ver');if(e)e.textContent=v?('Versiya '+v+' · sun\'iy intellekt yordamchi'):'Sun\'iy intellekt yordamchi';
+  const b=document.getElementById('ab_bld');if(b&&m)b.textContent='· build '+m.content}catch(e){}};
+ fill();const sb=document.getElementById('smod');if(sb)new MutationObserver(fill).observe(sb,{attributes:true,attributeFilter:['class']});
+}catch(e){}})();
 </script>
 </body>
 </html>

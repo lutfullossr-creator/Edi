@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Edi APK loyihasini android/ papkasida yaratadi (GitHub Actions ishlatadi).
-# EDI-BUILD: 2026100405
+# EDI-BUILD: 2026100408
 import glob, os, shutil, sys
 
 ROOT = 'android'
