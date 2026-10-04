@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Edi APK loyihasini android/ papkasida yaratadi (GitHub Actions ishlatadi).
+# EDI-BUILD: 2026100401
 import glob, os, shutil, sys
 
 ROOT = 'android'
@@ -477,7 +478,7 @@ class ListenService : Service() {
     private var sr: SpeechRecognizer? = null
     private val h = Handler(Looper.getMainLooper())
     private var on = false
-    private val wake = Regex("^\\s*(?:(?:hey|hay|ey|ok|okay|hi)\\s+)?(?:edi|eddi|eddy|edy|eddie|edie|эди|еди|ади)\\b[\\s,.:!-]*", RegexOption.IGNORE_CASE)
+    private val wake = Regex("^\\s*(?:(?:hey|hay|ey|ok|okay|hi)\\s+)?(?:edi|eddi|eddy|edy|eddie|edie|ede|adi|эди|еди|ади)\\b[\\s,.:!-]*", RegexOption.IGNORE_CASE)
 
     override fun onBind(i: Intent?): IBinder? = null
 
@@ -498,7 +499,39 @@ class ListenService : Service() {
         return START_STICKY
     }
 
+    private var rec: Rec? = null
+
+    private fun useApi(): Boolean = Stt.key(this).isNotEmpty() || Stt.gkey(this).isNotEmpty()
+
     private fun begin() {
+        if (!on) return
+        if (EdiState.sleeping()) { h.postDelayed({ begin() }, 4000L); return }
+        if (Speaker.active) { h.postDelayed({ begin() }, 500L); return }
+        if (useApi()) beginRec() else beginSR()
+    }
+
+    // Kalit bor: o'zimiz yozib, Gemini/Whisper bilan taniymiz (signal "tin-tin" yo'q, jimlikda xato yo'q)
+    private fun beginRec() {
+        val f = java.io.File(cacheDir, "loop.m4a")
+        val r = Rec(this, h, f) { ok ->
+            rec = null
+            if (!on) return@Rec
+            if (ok) {
+                Thread {
+                    try {
+                        val t = Stt.transcribe(this, f, Stt.lang(this))
+                        h.post { if (t.isNotBlank()) handle(listOf(t)); again(100L) }
+                    } catch (e: Exception) {
+                        h.post { again(2000L) }
+                    }
+                }.start()
+            } else again(100L)
+        }
+        rec = r
+        if (!r.start()) { rec = null; again(2500L) }
+    }
+
+    private fun beginSR() {
         if (!on) return
         if (!SpeechRecognizer.isRecognitionAvailable(this)) { stopSelf(); return }
         try { sr?.destroy() } catch (e: Exception) {}
@@ -553,6 +586,7 @@ class ListenService : Service() {
     override fun onDestroy() {
         on = false
         h.removeCallbacksAndMessages(null)
+        try { rec?.cancel() } catch (e: Exception) {}
         try { sr?.destroy() } catch (e: Exception) {}
         super.onDestroy()
     }
@@ -1081,27 +1115,7 @@ class Bridge(base: Context, private val web: WebView, private val activity: Main
     private fun speakNow(t: String) { tts?.speak(t, TextToSpeech.QUEUE_FLUSH, null, "edi") }
 
     @JavascriptInterface
-    fun speak(text: String) {
-        ui.post {
-            if (ttsReady) { speakNow(text); return@post }
-            pendingSpeech = text
-            if (tts == null) {
-                tts = TextToSpeech(ctx) { st ->
-                    if (st == TextToSpeech.SUCCESS) {
-                        val t = tts
-                        if (t != null) {
-                            var r = t.setLanguage(Locale("uz", "UZ"))
-                            if (r < 0) r = t.setLanguage(Locale("tr", "TR"))
-                            ttsReady = true
-                            val p = pendingSpeech
-                            pendingSpeech = null
-                            if (p != null) speakNow(p)
-                        }
-                    }
-                }
-            }
-        }
-    }
+    fun speak(text: String) { Speaker.speak(ctx, text) }
 
     @JavascriptInterface
     fun listen() { ui.post { activity?.startListen() } }
@@ -1226,6 +1240,27 @@ class Bridge(base: Context, private val web: WebView, private val activity: Main
     // ------------------------------------------------------------ kalit, til, suzuvchi tugma
     @JavascriptInterface
     fun setKey(k: String) { Stt.setKey(ctx, k) }
+
+    @JavascriptInterface
+    fun setGKey(k: String) { Stt.setGKey(ctx, k) }
+
+    @JavascriptInterface
+    fun sleep(min: Int): String {
+        EdiState.sleep(min.coerceIn(1, 240))
+        Speaker.stop()
+        BubbleService.inst?.refreshSleep()
+        return "😴 " + min + " daqiqa dam olaman. Uyg'otish: suzuvchi tugmani bosing"
+    }
+
+    @JavascriptInterface
+    fun wake(): String {
+        EdiState.wake()
+        BubbleService.inst?.refreshSleep()
+        return "☀️ Uyg'ondim"
+    }
+
+    @JavascriptInterface
+    fun stopSpeak() { Speaker.stop() }
 
     @JavascriptInterface
     fun setVoiceLang(l: String) { Stt.setLang(ctx, l) }
@@ -1782,6 +1817,64 @@ object Stt {
     private fun sp(c: Context) = c.getSharedPreferences("edi", Context.MODE_PRIVATE)
     fun key(c: Context): String = sp(c).getString("qk", "") ?: ""
     fun setKey(c: Context, k: String) { sp(c).edit().putString("qk", k).apply() }
+    fun gkey(c: Context): String = sp(c).getString("gk", "") ?: ""
+    fun setGKey(c: Context, k: String) { sp(c).edit().putString("gk", k).apply() }
+
+    const val GPROMPT = "Bu telefonni boshqarish uchun aytilgan qisqa o'zbek tilidagi ovozli buyruq. Gapni aynan eshitilganidek, o'zbek LOTIN alifbosida (o', g', sh, ch, ng) yoz. Faqat matnni yoz, izoh yozma. Agar gap bo'lmasa bo'sh qoldir. Tez-tez uchraydigan so'zlar: Edi, fonar, yoq, o'chir, musiqa, qo'y, qo'shiq, ovoz, balandla, pasaytir, och, yop, ilova, qo'ng'iroq, sms, yoz, skrinshot, yorqinlik, kontakt, top, tarjima, budilnik, taymer, ob-havo, Telegram, Instagram, YouTube, WhatsApp, kamera, galereya, sozlamalar, wifi, bluetooth, batareya, pastga, tepaga, bos, orqaga, bosh ekran, diktant."
+
+    // Gemini: o'zbekchani Whisper'dan yaxshiroq tushunadi
+    fun gemini(key: String, f: File): String {
+        val b64 = android.util.Base64.encodeToString(f.readBytes(), android.util.Base64.NO_WRAP)
+        var err = "noma'lum xato"
+        for (model in arrayOf("gemini-2.5-flash", "gemini-2.0-flash")) {
+            for (mime in arrayOf("audio/mp4", "audio/aac")) {
+                try {
+                    val body = JSONObject().put("contents", org.json.JSONArray().put(JSONObject().put("parts", org.json.JSONArray()
+                        .put(JSONObject().put("text", GPROMPT))
+                        .put(JSONObject().put("inline_data", JSONObject().put("mime_type", mime).put("data", b64))))))
+                        .put("generationConfig", JSONObject().put("temperature", 0))
+                    val c = URL("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent").openConnection() as HttpURLConnection
+                    c.requestMethod = "POST"
+                    c.doOutput = true
+                    c.connectTimeout = 15000
+                    c.readTimeout = 40000
+                    c.setRequestProperty("x-goog-api-key", key)
+                    c.setRequestProperty("Content-Type", "application/json")
+                    c.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                    val code = c.responseCode
+                    val st = if (code in 200..299) c.inputStream else c.errorStream
+                    val resp = if (st != null) st.bufferedReader().use { it.readText() } else ""
+                    if (code in 200..299) {
+                        val parts = JSONObject(resp).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
+                        return (parts?.optJSONObject(0)?.optString("text", "") ?: "").trim()
+                    }
+                    if (code == 400 && mime == "audio/mp4") { err = "HTTP 400"; continue }
+                    if (code == 401 || code == 403) { err = "Gemini kaliti noto'g'ri"; throw Exception(err) }
+                    err = "HTTP " + code + (if (code == 429) " (limit tugadi)" else "")
+                    break
+                } catch (e: Exception) {
+                    err = e.message ?: "tarmoq xatosi"
+                    if (err.startsWith("Gemini kaliti")) throw e
+                }
+            }
+        }
+        throw Exception(err)
+    }
+
+    // Eng yaxshisini tanlaydi: Gemini, bo'lmasa Whisper
+    fun transcribe(c: Context, f: File, lang: String): String {
+        val g = gkey(c)
+        val q = key(c)
+        var last: Exception? = null
+        if (g.isNotEmpty() && lang == "uz") {
+            try {
+                val t = gemini(g, f)
+                if (t.isNotBlank() || q.isEmpty()) return t
+            } catch (e: Exception) { last = e }
+        }
+        if (q.isNotEmpty()) return whisper(q, f, lang)
+        throw last ?: Exception("kalit yo'q")
+    }
     fun lang(c: Context): String = sp(c).getString("vl", "uz") ?: "uz"
     fun setLang(c: Context, l: String) { sp(c).edit().putString("vl", l).apply() }
 
@@ -1825,6 +1918,145 @@ object Stt {
         }
         throw Exception(err)
     }
+}
+'''
+
+F[KT + 'Speaker.kt'] = r'''package com.lutfullo.edi
+
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.os.Handler
+import android.os.Looper
+import android.speech.tts.TextToSpeech
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import java.util.Locale
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
+// Edi ovozi: Google ovozi (o'zbekcha to'g'ri talaffuz), bo'lmasa telefon TTS
+object Speaker {
+    @Volatile private var gen = 0
+    @Volatile var active = false
+    @Volatile private var mp: MediaPlayer? = null
+    private var tts: TextToSpeech? = null
+    private var ttsOk = false
+    private val main = Handler(Looper.getMainLooper())
+
+    fun stop() {
+        gen++
+        active = false
+        try { mp?.stop() } catch (e: Exception) {}
+        try { mp?.release() } catch (e: Exception) {}
+        mp = null
+        main.post { try { tts?.stop() } catch (e: Exception) {} }
+    }
+
+    private fun chunks(t: String): List<String> {
+        val out = ArrayList<String>()
+        var cur = StringBuilder()
+        for (w in t.split(Regex("\\s+"))) {
+            if (cur.length + w.length + 1 > 170 && cur.isNotEmpty()) { out.add(cur.toString()); cur = StringBuilder() }
+            if (cur.isNotEmpty()) cur.append(' ')
+            cur.append(w)
+            if (w.endsWith(".") || w.endsWith("!") || w.endsWith("?")) { if (cur.length > 60) { out.add(cur.toString()); cur = StringBuilder() } }
+        }
+        if (cur.isNotEmpty()) out.add(cur.toString())
+        return out
+    }
+
+    private fun fetch(ctx: Context, text: String, lang: String, f: File) {
+        val u = "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&ttsspeed=1&tl=" + lang + "&q=" + URLEncoder.encode(text, "UTF-8")
+        val c = URL(u).openConnection() as HttpURLConnection
+        c.connectTimeout = 8000
+        c.readTimeout = 15000
+        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
+        c.setRequestProperty("Referer", "https://translate.google.com/")
+        if (c.responseCode != 200) throw Exception("TTS HTTP " + c.responseCode)
+        val b = c.inputStream.use { it.readBytes() }
+        if (b.size < 400) throw Exception("TTS bo'sh")
+        f.writeBytes(b)
+    }
+
+    private fun play(f: File, my: Int) {
+        val latch = CountDownLatch(1)
+        val m = MediaPlayer()
+        mp = m
+        try {
+            m.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            m.setDataSource(f.absolutePath)
+            m.setOnCompletionListener { latch.countDown() }
+            m.setOnErrorListener { _, _, _ -> latch.countDown(); true }
+            m.prepare()
+            if (my != gen) return
+            m.start()
+            latch.await(40, TimeUnit.SECONDS)
+        } finally {
+            try { m.release() } catch (e: Exception) {}
+            if (mp === m) mp = null
+        }
+    }
+
+    private fun fallback(ctx: Context, t: String) {
+        main.post {
+            val ap = ctx.applicationContext
+            if (tts == null) {
+                tts = TextToSpeech(ap) { st ->
+                    if (st == TextToSpeech.SUCCESS) {
+                        val x = tts
+                        if (x != null) {
+                            var r = x.setLanguage(Locale("uz", "UZ"))
+                            if (r < 0) r = x.setLanguage(Locale("tr", "TR"))
+                            ttsOk = true
+                            x.speak(t, TextToSpeech.QUEUE_FLUSH, null, "edi")
+                        }
+                    }
+                }
+            } else if (ttsOk) {
+                tts?.speak(t, TextToSpeech.QUEUE_FLUSH, null, "edi")
+            }
+        }
+    }
+
+    fun speak(ctx: Context, text: String) {
+        val t = text.replace(Regex("\\s+"), " ").trim()
+        if (t.isEmpty()) return
+        stop()
+        active = false
+        val my = gen
+        val lang = Stt.lang(ctx).let { if (it == "auto" || it.isEmpty()) "uz" else it }
+        Thread {
+            active = true
+            try {
+                var i = 0
+                for (part in chunks(t)) {
+                    if (my != gen) return@Thread
+                    val f = File(ctx.cacheDir, "tts_" + (i++ % 3) + ".mp3")
+                    fetch(ctx, part, lang, f)
+                    if (my != gen) return@Thread
+                    play(f, my)
+                }
+            } catch (e: Exception) {
+                if (my == gen) fallback(ctx, t)
+            } finally {
+                if (my == gen) active = false
+            }
+        }.start()
+    }
+}
+'''
+
+F[KT + 'EdiState.kt'] = r'''package com.lutfullo.edi
+
+// Umumiy holat: "dam olish" (uyqu) rejimi
+object EdiState {
+    @Volatile var sleepUntil = 0L
+    fun sleeping(): Boolean = System.currentTimeMillis() < sleepUntil
+    fun sleep(min: Int) { sleepUntil = System.currentTimeMillis() + min * 60000L }
+    fun wake() { sleepUntil = 0L }
 }
 '''
 
@@ -1941,6 +2173,7 @@ import java.io.File
 class BubbleService : Service() {
     companion object {
         @Volatile var engine: WebView? = null
+        @Volatile var inst: BubbleService? = null
     }
 
     private lateinit var wm: WindowManager
@@ -1959,7 +2192,23 @@ class BubbleService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        inst = this
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
+    }
+
+    private val wakeR = Runnable { refreshSleep() }
+
+    // Dam olish holatini tugmada ko'rsatadi; vaqti tugasa o'zi uyg'onadi
+    fun refreshSleep() {
+        h.post {
+            h.removeCallbacks(wakeR)
+            if (EdiState.sleeping()) {
+                btn?.text = "😴"
+                h.postDelayed(wakeR, Math.max(500L, EdiState.sleepUntil - System.currentTimeMillis() + 300L))
+            } else if (!busy) {
+                btn?.text = "🎙"
+            }
+        }
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -2126,16 +2375,18 @@ class BubbleService : Service() {
 
     private fun onTap() {
         if (busy) return
+        if (EdiState.sleeping()) { EdiState.wake(); refreshSleep(); say("☀️ Uyg'ondim") }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             say("🔐 Mikrofon ruxsati yo'q. Edi ni oching")
             return
         }
+        Speaker.stop()
         busy = true
         upgradeMic()
         setBtn(true)
         say("🎤 Gapiring…")
         val key = Stt.key(this)
-        if (key.isNotEmpty()) recordWhisper(key) else recognizeGoogle()
+        if (key.isNotEmpty() || Stt.gkey(this).isNotEmpty()) recordWhisper(key) else recognizeGoogle()
     }
 
     private fun recordWhisper(key: String) {
@@ -2149,7 +2400,7 @@ class BubbleService : Service() {
                 say("🔄 Tanilmoqda…")
                 Thread {
                     try {
-                        val t = Stt.whisper(key, f, Stt.lang(this))
+                        val t = Stt.transcribe(this, f, Stt.lang(this))
                         h.post { handleText(t) }
                     } catch (e: Exception) {
                         h.post { busy = false; say("⚠️ " + (e.message ?: "xato")) }
@@ -2231,7 +2482,7 @@ class BubbleService : Service() {
     private fun onResult(m: String, isCmd: Boolean) {
         guard?.let { h.removeCallbacks(it) }
         busy = false
-        if (isCmd) say(m.take(220)) else openEdi(pendingText)
+        if (isCmd) { say(m.take(220)); Speaker.speak(this, m.take(300)) } else openEdi(pendingText)
     }
 
     private fun openEdi(q: String) {
@@ -2256,6 +2507,7 @@ class BubbleService : Service() {
         } catch (e: Exception) {}
         root = null
         engine = null
+        inst = null
         super.onDestroy()
     }
 }
