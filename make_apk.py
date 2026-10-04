@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Edi APK loyihasini android/ papkasida yaratadi (GitHub Actions ishlatadi).
-# EDI-BUILD: 2026100401
+# EDI-BUILD: 2026100405
 import glob, os, shutil, sys
 
 ROOT = 'android'
@@ -166,6 +166,10 @@ F['app/src/main/AndroidManifest.xml'] = r'''<?xml version="1.0" encoding="utf-8"
 
         <receiver
             android:name=".InstallReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".UpdateReceiver"
             android:exported="false" />
 
         <receiver
@@ -679,6 +683,7 @@ class MainActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         pendingQ = intent?.getStringExtra("q")
+        try { UpdateWatch.schedule(this, 45000L) } catch (e: Exception) {}
         window.statusBarColor = Color.parseColor("#0a0a0a")
         window.navigationBarColor = Color.parseColor("#0a0a0a")
         val w = WebView(this)
@@ -1230,6 +1235,9 @@ class Bridge(base: Context, private val web: WebView, private val activity: Main
 
     @JavascriptInterface
     fun version(): String = curName()
+
+    @JavascriptInterface
+    fun watchUpdate(minutes: Int) { UpdateWatch.fast(ctx, minutes) }
 
     @JavascriptInterface
     fun update(mode: String): String {
@@ -2523,6 +2531,7 @@ import android.provider.Settings
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
+        try { UpdateWatch.schedule(c, 120000L) } catch (e: Exception) {}
         try {
             val sp = c.getSharedPreferences("edi", Context.MODE_PRIVATE)
             if (!sp.getBoolean("bubble_on", false)) return
@@ -2530,6 +2539,109 @@ class BootReceiver : BroadcastReceiver() {
             c.startForegroundService(Intent(c, BubbleService::class.java))
         } catch (e: Exception) {
         }
+    }
+}
+'''
+
+F[KT + 'UpdateWatch.kt'] = r'''package com.lutfullo.edi
+
+import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.app.Notification
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+
+// Yangi APK chiqqanda bildirishnoma yuboradi (ilova yopiq bo'lsa ham)
+class UpdateReceiver : BroadcastReceiver() {
+    override fun onReceive(c: Context, i: Intent) {
+        val pr = goAsync()
+        Thread {
+            try { UpdateWatch.check(c.applicationContext) } catch (e: Exception) {} finally { pr.finish() }
+        }.start()
+    }
+}
+
+object UpdateWatch {
+    private const val REPO = "lutfullossr-creator/Edi"
+    private const val SLOW = 6L * 60L * 60L * 1000L
+
+    fun schedule(c: Context, delayMs: Long) {
+        try {
+            val am = c.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val pi = PendingIntent.getBroadcast(c, 7711, Intent(c, UpdateReceiver::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + delayMs, pi)
+        } catch (e: Exception) {
+        }
+    }
+
+    // APK qurilishi boshlanganda: bir necha daqiqa tez-tez tekshiradi
+    fun fast(c: Context, minutes: Int) {
+        val sp = c.getSharedPreferences("edi", Context.MODE_PRIVATE)
+        sp.edit().putLong("upd_fast_until", System.currentTimeMillis() + minutes * 60000L).apply()
+        schedule(c, 30000L)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun curCode(c: Context): Int {
+        val pi = c.packageManager.getPackageInfo(c.packageName, 0)
+        return if (android.os.Build.VERSION.SDK_INT >= 28) pi.longVersionCode.toInt() else pi.versionCode
+    }
+
+    private fun curName(c: Context): String {
+        return c.packageManager.getPackageInfo(c.packageName, 0).versionName ?: "?"
+    }
+
+    fun check(c: Context) {
+        val sp = c.getSharedPreferences("edi", Context.MODE_PRIVATE)
+        var notifiedNow = false
+        try {
+            val u = URL("https://api.github.com/repos/" + REPO + "/releases/latest").openConnection() as HttpURLConnection
+            u.connectTimeout = 10000
+            u.readTimeout = 15000
+            u.setRequestProperty("Accept", "application/vnd.github+json")
+            u.setRequestProperty("User-Agent", "EdiApp")
+            if (u.responseCode == 200) {
+                val j = JSONObject(u.inputStream.bufferedReader().use { it.readText() })
+                val tag = j.optString("tag_name", "")
+                val n = Regex("(\\d+)$").find(tag)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                val hasApk = (j.optJSONArray("assets")?.length() ?: 0) > 0
+                if (n > curCode(c) && hasApk && sp.getInt("upd_notified", 0) != n) {
+                    notify(c, tag, curName(c))
+                    sp.edit().putInt("upd_notified", n).putLong("upd_fast_until", 0L).apply()
+                    notifiedNow = true
+                }
+            }
+        } catch (e: Exception) {
+        }
+        val fastActive = !notifiedNow && System.currentTimeMillis() < sp.getLong("upd_fast_until", 0L)
+        schedule(c, if (fastActive) 60000L else SLOW)
+    }
+
+    private fun notify(c: Context, tag: String, cur: String) {
+        val nm = c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (!nm.areNotificationsEnabled()) return
+        nm.createNotificationChannel(NotificationChannel("edi_update", "Edi yangilanishlari", NotificationManager.IMPORTANCE_HIGH))
+        val open = Intent(c, MainActivity::class.java)
+        open.putExtra("q", "ilovani yangila")
+        open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val pi = PendingIntent.getActivity(c, 7712, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val txt = "Yangi versiya topildi: " + tag + " (hozirgi v" + cur + "). Bosing — yuklab o'rnatiladi."
+        val n = Notification.Builder(c, "edi_update")
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("Edi ni yangilang")
+            .setContentText(txt)
+            .setStyle(Notification.BigTextStyle().bigText(txt))
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+        nm.notify(7712, n)
     }
 }
 '''

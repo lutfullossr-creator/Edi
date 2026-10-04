@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#0a0a0a">
 <title>Edi</title>
-<meta name="edi-build" content="2026100401">
+<meta name="edi-build" content="2026100405">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <style>
@@ -585,7 +585,7 @@ input[type=range]::-moz-range-thumb{width:28px;height:28px;border:0;border-radiu
       <input type="range" id="s_tp" min="0" max="1.5" step="0.1" style="width:100%">
       <div class="flbl">Shrift o'lchami: <span id="s_fsv"></span></div>
       <input type="range" id="s_fs" min="13" max="19" step="1" style="width:100%">
-      <div class="frow"><input type="checkbox" id="s_th"><label for="s_th">Yorug' mavzu</label></div>
+      <label class="flbl" for="s_th">Mavzu</label><select class="fsel" id="s_th"><option value="auto">Avto (tizimga moslash)</option><option value="light">Oq</option><option value="dark">Qora</option></select>
       <div class="frow"><input type="checkbox" id="s_hp"><label for="s_hp">Tebranish (bosganda yengil titrash)</label></div>
       <div class="frow"><input type="checkbox" id="s_en"><label for="s_en">Enter — yuborish (o'chirilsa Enter yangi qator qo'shadi)</label></div>
       <div class="fsep"></div>
@@ -1130,12 +1130,16 @@ $('pst').onclick=()=>navigator.clipboard.readText().then(v=>{$('key').value=v.tr
 $('mlbtn').onclick=async()=>{const b=$('mlbtn');b.textContent='Yuklanmoqda…';try{fillM(await loadModels(C.p));toast('✅ Modellar yangilandi');updBadge()}catch(e){toast('⚠️ '+(e.message||e))}b.textContent="🔄 Modellar ro'yxatini yangilash"};
 $('cins').oninput=e=>{C.ci=e.target.value;save()};
 $('ap').onchange=e=>{C.ap=e.target.checked;save()};
-function applyUI(){document.body.classList.toggle('light',!!C.th);document.documentElement.style.setProperty('--fs',(C.fs||15)+'px');const m=document.querySelector('meta[name=theme-color]');if(m)m.content=C.th?'#ffffff':'#0a0a0a'}
-function initExtra(){$('s_ps').value=C.ps||0;$('s_tp').value=C.tp??.7;$('s_tpv').textContent=$('s_tp').value;$('s_fs').value=C.fs||15;$('s_fsv').textContent=$('s_fs').value+'px';$('s_th').checked=!!C.th;$('s_en').checked=C.en!==false;$('s_hp').checked=C.hp!==false}
+const MQL=window.matchMedia?matchMedia('(prefers-color-scheme: light)'):null;
+function themeMode(){return C.th===true||C.th==='light'?'light':C.th===false||C.th==='dark'?'dark':'auto'}
+function isLight(){const m=themeMode();return m==='auto'?!!(MQL&&MQL.matches):m==='light'}
+if(MQL){const f=()=>{try{if(themeMode()==='auto')applyUI()}catch(e){}};MQL.addEventListener?MQL.addEventListener('change',f):MQL.addListener&&MQL.addListener(f)}
+function applyUI(){document.body.classList.toggle('light',isLight());document.documentElement.style.setProperty('--fs',(C.fs||15)+'px');const m=document.querySelector('meta[name=theme-color]');if(m)m.content=isLight()?'#ffffff':'#0a0a0a'}
+function initExtra(){$('s_ps').value=C.ps||0;$('s_tp').value=C.tp??.7;$('s_tpv').textContent=$('s_tp').value;$('s_fs').value=C.fs||15;$('s_fsv').textContent=$('s_fs').value+'px';$('s_th').value=themeMode();$('s_en').checked=C.en!==false;$('s_hp').checked=C.hp!==false}
 $('s_ps').onchange=e=>{C.ps=+e.target.value;save()};
 $('s_tp').oninput=e=>{C.tp=+e.target.value;$('s_tpv').textContent=e.target.value;save()};
 $('s_fs').oninput=e=>{C.fs=+e.target.value;$('s_fsv').textContent=e.target.value+'px';applyUI();save()};
-$('s_th').onchange=e=>{C.th=e.target.checked;applyUI();save()};
+$('s_th').onchange=e=>{C.th=e.target.value;applyUI();save()};
 $('s_hp').onchange=e=>{C.hp=e.target.checked;save()};
 $('s_en').onchange=e=>{C.en=e.target.checked;save()};
 $('kdel').onclick=()=>{if(!C[PK[C.p]])return;if(!confirm(PN[C.p]+' kalitini o\'chiraymi?'))return;C[PK[C.p]]='';C[PM[C.p]]='';save();$('kinfo').textContent='';syncSet();updBadge()};
@@ -1414,6 +1418,17 @@ Promise.resolve(fn(q,raw)).then(r=>{m.text=r||'Tushunmadim';if(AN&&AN.speak&&/^(
 return false}
 
 // === Qo'shimcha buyruqlar + native ovoz (APK) ===
+function parseAlarm(q){q=String(q||'').toLowerCase();
+ let r=q.match(/(\d+)\s*(daqiqa|minut|soat)\w*\s*(dan\s*)?keyin/);
+ if(r){const d=new Date(Date.now()+(+r[1])*(/soat/.test(r[2])?3600000:60000));return d.getHours()+':'+d.getMinutes()}
+ let hh,mm=0;
+ r=q.match(/(\d{1,2})\s*[:;.,\-]\s*(\d{2})/)||q.match(/\b(\d{1,2})(\d{2})\b/)||q.match(/\b(\d{1,2})\s+(\d{1,2})\b/);
+ if(r){hh=+r[1];mm=+r[2]}else{r=q.match(/\b(\d{1,2})\b/);if(!r)return null;hh=+r[1]}
+ if(/yarim/.test(q)&&!mm)mm=30;
+ if(/chorak/.test(q)&&!mm)mm=15;
+ if(hh<12&&/kech|tushdan\s*keyin|peshin|oqshom/.test(q))hh+=12;
+ if(hh>23||mm>59)return false;
+ return hh+':'+mm}
 const ACT=(n,a='')=>AN&&AN.act?AN.act(n,a):"📱 Bu buyruq faqat APK da ishlaydi";
 window.ediVoice=t=>{if(!t)return;$('inp').value=t;send()};
 CMDS.push(
@@ -1424,7 +1439,7 @@ CMDS.push(
 [/bluetooth|blutuz/,()=>ACT('settings','bt')],
 [/batareya|zaryad/,()=>ACT('battery')],
 [/bosh\s*ekran|uyga\s*qayt/,()=>ACT('home')],
-[/budilnik|signal\s*qo'?y/,q=>{const m=q.match(/(\d{1,2})\D+(\d{1,2})?/);return m?ACT('alarm',m[1]+':'+(m[2]||0)):"Vaqtni ayting: 'budilnik 7 30'"}],
+[/budilnik|signal\s*qo'?y/,q=>{const al=parseAlarm(q);if(al===null)return "Vaqtni ayting: 'budilnik 7 30'";if(al===false)return "Vaqt noto'g'ri. Misol: 'budilnik 7 30'";return ACT('alarm',al)}],
 [/qo'?ng'?iroq|telefon\s*qil/,q=>ACT('dial',(q.match(/[\d+]{5,}/)||[''])[0])],
 [/(qidir|google)\s+\S/,q=>ACT('search',q.replace(/.*?(qidir|google)\s+/,''))]);
 
@@ -1590,8 +1605,9 @@ N(/internet\s*(bor|holat|tezlik)|tarmoq\s*holat/,[],()=>{const c=navigator.conne
 let WL=null;
 N(/o'?chmasin|uxlamasin|yonib\s*tur/,[],async()=>{try{WL=await navigator.wakeLock.request('screen');return "☀️ Ekran o'chmaydi"}catch(e){return "⚠️ Qo'llanmaydi"}});
 N(/ekran\w*\s*o'?chsin|uxlasin/,[],async()=>{try{if(WL)await WL.release()}catch(e){}WL=null;return '🌙 Ekran odatdagidek'});
-N(/qorong'?i\s*rejim|tungi\s*rejim/,[],()=>{C.th=false;applyUI();save();return "🌙 Qorong'i rejim"});
-N(/yorug'?\s*rejim|kunduzgi\s*rejim/,[],()=>{C.th=true;applyUI();save();return "☀️ Yorug' rejim"});
+N(/qorong'?i\s*rejim|tungi\s*rejim/,[],()=>{C.th='dark';applyUI();save();return "🌙 Qorong'i rejim"});
+N(/avto\w*\s*(rejim|mavzu)|tizim\w*\s*(rejim|mavzu)/,[],()=>{C.th='auto';applyUI();save();return "🌓 Avto rejim"});
+N(/yorug'?\s*rejim|kunduzgi\s*rejim/,[],()=>{C.th='light';applyUI();save();return "☀️ Yorug' rejim"});
 N(/yangi\s*suhbat/,[],()=>{$('new').click();return '✅ Yangi suhbat'});
 N(/tarjimon\w*\s*(och|ishga)|\bocr\b/,[],()=>{$('ocrbtn').click();return '📷 Tarjimon ochildi'});
 
@@ -1652,7 +1668,7 @@ setTimeout(()=>{try{if(window.__BG||!AN||!AN.update)return;const d=new Date().to
 // --- Fayllar bilan o'zini yangilash (GitHub orqali, hammasi Edi ichida) ---
 const GH_REPO='lutfullossr-creator/Edi';
 const ghH=tk=>({Authorization:'Bearer '+tk,Accept:'application/vnd.github+json'});
-const ghTok=()=>{let tk=localStorage.getItem('edigh');if(!tk){tk=(prompt("GitHub token kiriting (bir marta kerak).\n\n1) github.com/settings/tokens/new?scopes=repo oching\n2) pastda 'Generate token' bosing\n3) ghp_... ni shu yerga qo'ying")||'').trim();if(tk)localStorage.setItem('edigh',tk)}return tk};
+const ghTok=()=>{let tk=localStorage.getItem('edigh');if(!tk){tk=(prompt("GitHub token kiriting (bir marta kerak).\n\n1) github.com/settings/tokens/new?scopes=repo,workflow oching\n2) pastda 'Generate token' bosing\n3) ghp_... ni shu yerga qo'ying")||'').trim();if(tk)localStorage.setItem('edigh',tk)}return tk};
 const kindOf=f=>{const t=String((f&&f.text)||'').replace(/^\uFEFF/,'');const html=/<html[\s>]/i.test(t)&&/<\/html>/i.test(t)&&/function EDI_CMD/.test(t);const py=/Edi APK loyihasini/.test(t.slice(0,800))&&(t.match(/^F\[/gm)||[]).length>=5;return html&&!py?'index.html':py&&!html?'make_apk.py':null};
 const stampOf=(k,t)=>{t=String(t||'');const m=k==='make_apk.py'?t.match(/^# EDI-BUILD: (\d{6,})/m):t.match(/<meta name="edi-build" content="(\d{6,})"/);return m?+m[1]:0};
 const pickFiles=()=>new Promise(res=>{const i=document.createElement('input');i.type='file';i.multiple=true;i.style.display='none';document.body.appendChild(i);
@@ -2066,25 +2082,107 @@ const instNum=()=>{try{return AN&&AN.version?relNum(AN.version()):0}catch(e){ret
 let root=null,logBox=null,btnBox=null,busy=false,token=0;
 
 function css(el,s){el.style.cssText=s;return el}
+const IC={
+ up:'<path d="M12 16V5M7.5 9.5L12 5l4.5 4.5"/><path d="M4.5 15.5v2.2a2 2 0 002 2h11a2 2 0 002-2v-2.2"/>',
+ down:'<path d="M12 4.5V15M7.5 10.5L12 15l4.5-4.5"/><path d="M4.5 19.5h15"/>',
+ check:'<path class="eu-draw" d="M5.5 12.8l4.2 4.2L18.8 7.8"/>',
+ x:'<path d="M7 7l10 10M17 7L7 17"/>',
+ warn:'<path d="M12 4.2l8.6 15H3.4z"/><path d="M12 10v4.2M12 17.3v.01"/>',
+ stop:'<circle cx="12" cy="12" r="8.5"/><path d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6"/>',
+ spin:'<path class="eu-spin" d="M12 3.5a8.5 8.5 0 108.5 8.5"/>',
+ box:'<path d="M20.5 7.8L12 3.2 3.5 7.8v8.4l8.5 4.6 8.5-4.6z"/><path d="M3.8 8l8.2 4.5L20.2 8M12 12.5v8"/>',
+ globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c3.2 3.4 3.2 13.6 0 17M12 3.5c-3.2 3.4-3.2 13.6 0 17"/>',
+ key:'<circle cx="8" cy="15.5" r="3.8"/><path d="M10.8 12.8L19.5 4M16 7.5l3 3"/>',
+ refresh:'<path d="M19.5 11.5a7.5 7.5 0 10-2.2 5.4"/><path d="M19.8 4.5v6.2h-6.2"/>',
+ info:'<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.2M12 7.9v.01"/>',
+ back:'<path d="M14.5 6l-6 6 6 6"/>',
+ spark:'<path d="M12 3.5l2.1 5.4 5.4 2.1-5.4 2.1L12 18.5l-2.1-5.4L4.5 11l5.4-2.1z"/>',
+ list:'<rect x="5" y="4" width="14" height="16.5" rx="2.5"/><path d="M9 9h6M9 13h6M9 17h3.5"/>',
+ search:'<circle cx="10.8" cy="10.8" r="6.3"/><path d="M15.6 15.6l4.4 4.4"/>',
+ trash:'<path d="M5 7h14M9.5 7V4.8h5V7M7 7l.8 12.2h8.4L17 7"/>',
+ minus:'<path d="M6 12h12"/>',
+ build:'<path d="M14.5 6.2a4 4 0 005.3 5.3L11 20.3a2.4 2.4 0 01-3.4-3.4z"/><path d="M14.5 6.2L12.3 8.4"/>',
+ n1:'',n2:'',n3:''};
+const EM={'⏳':['spin','b'],'✅':['check','g'],'❌':['x','r'],'⚠️':['warn','o'],'🛑':['stop','r'],'ℹ️':['info','b'],'📦':['box','b'],'🌐':['globe','b'],'🔑':['key','o'],'🆕':['spark','g'],'📋':['list','b'],'🔎':['search','b'],'🧹':['trash','o'],'🏗':['build','b'],'⬆️':['up','b'],'➖':['minus','n'],'⬇️':['down','b'],'🔄':['refresh','b'],'⬅️':['back','n'],'📂':['up','b'],'📲':['up','b'],'↩️':['back','n'],'🤫':['info','n']};
+const NUM={'1️⃣':'1','2️⃣':'2','3️⃣':'3','4️⃣':'4'};
+const svg=(n,sz)=>'<svg viewBox="0 0 24 24" width="'+(sz||20)+'" height="'+(sz||20)+'" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+(IC[n]||IC.info)+'</svg>';
+function icHtml(e){e=String(e||'').trim();if(NUM[e])return['<b class="eu-num">'+NUM[e]+'</b>','b'];const m=EM[e]||['info','n'];return[svg(m[0]),m[1]]}
+const EU_CSS=`
+.eu-bd{position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.45);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .28s ease;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif}
+.eu-bd.in{opacity:1}
+.eu-sh{width:100%;max-width:520px;max-height:92vh;overflow:auto;background:var(--bg2,#141414);color:var(--t,#e5e5e5);border-radius:28px 28px 0 0;padding:8px 16px calc(env(safe-area-inset-bottom,0px) + 18px);box-sizing:border-box;transform:translateY(100%);transition:transform .42s cubic-bezier(.32,.72,0,1);box-shadow:0 -10px 40px rgba(0,0,0,.35)}
+.eu-bd.in .eu-sh{transform:none}
+.eu-grab{width:38px;height:5px;border-radius:3px;background:var(--sep2,#444);opacity:.7;margin:4px auto 12px}
+.eu-hd{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.eu-hd .eu-logo{width:44px;height:44px;border-radius:13px;background:linear-gradient(135deg,#7c4dff,#0a84ff);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(10,132,255,.35)}
+.eu-hd h2{margin:0;font-size:20px;font-weight:700;letter-spacing:-.3px;flex:1}
+.eu-hd small{display:block;font-size:12px;font-weight:500;color:var(--t2,#888);margin-top:2px;letter-spacing:0}
+.eu-cl{width:32px;height:32px;border:0;border-radius:50%;background:var(--s2,#252525);color:var(--t2,#888);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s,opacity .15s}
+.eu-cl:active{transform:scale(.88);opacity:.7}
+.eu-hero{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.eu-hero:empty{display:none}
+.eu-big{position:relative;overflow:hidden;display:flex;align-items:center;gap:14px;width:100%;min-height:76px;padding:14px 18px;border:0;border-radius:22px;background:linear-gradient(135deg,#0a84ff,#5e5ce6);color:#fff;text-align:left;cursor:pointer;box-shadow:0 10px 26px rgba(10,132,255,.38);transition:transform .18s cubic-bezier(.3,.7,.4,1.4),box-shadow .2s;animation:eu-pop .5s cubic-bezier(.3,.7,.4,1.3) both}
+.eu-big:active{transform:scale(.965);box-shadow:0 4px 12px rgba(10,132,255,.3)}
+.eu-big::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.28),transparent);transform:skewX(-18deg);animation:eu-shine 3.2s ease-in-out infinite}
+.eu-big .eu-bi{flex:0 0 46px;width:46px;height:46px;border-radius:15px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center}
+.eu-big .eu-bi svg{width:26px;height:26px;stroke-width:2.2}
+.eu-big b{display:block;font-size:19px;font-weight:700;letter-spacing:-.3px}
+.eu-big span.s{display:block;font-size:12.5px;opacity:.85;margin-top:2px;font-weight:500}
+.eu-list{background:var(--bg3,#1e1e1e);border-radius:18px;overflow:hidden;margin-bottom:14px}
+.eu-list:empty{display:none}
+.eu-row{display:flex;align-items:center;gap:12px;padding:12px 14px;font-size:14.5px;line-height:1.35;animation:eu-in .38s cubic-bezier(.32,.72,0,1) both}
+.eu-row+.eu-row{border-top:1px solid var(--sep,#2a2a2a)}
+.eu-row .tx{flex:1;min-width:0;word-break:break-word}
+.eu-ic{flex:0 0 32px;width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+.eu-ic.b{background:rgba(10,132,255,.16);color:#0a84ff}.eu-ic.g{background:rgba(48,209,88,.16);color:#30d158}.eu-ic.r{background:rgba(255,69,58,.16);color:#ff453a}.eu-ic.o{background:rgba(255,159,10,.16);color:#ff9f0a}.eu-ic.n{background:rgba(142,142,147,.18);color:#8e8e93}
+.eu-ic.pop{animation:eu-pop .45s cubic-bezier(.3,.7,.4,1.5)}
+.eu-num{font-size:14px;font-weight:700}
+.eu-spin{transform-origin:12px 12px;animation:eu-rot .8s linear infinite}
+.eu-draw{stroke-dasharray:26;stroke-dashoffset:26;animation:eu-dr .5s .1s ease forwards}
+.eu-btns{display:flex;flex-direction:column;gap:8px}
+.eu-sec{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;padding:10px 14px;border:0;border-radius:16px;background:var(--bg3,#1e1e1e);color:var(--t,#e5e5e5);font-size:15.5px;font-weight:600;text-align:left;cursor:pointer;transition:transform .15s,background .2s;animation:eu-in .4s cubic-bezier(.32,.72,0,1) both}
+.eu-sec:active{transform:scale(.97);background:var(--s2,#333)}
+.eu-sec .eu-ic{flex-basis:30px;width:30px;height:30px}
+.eu-sec .tx{flex:1}
+.eu-list>input{display:block;margin:10px 12px!important;width:calc(100% - 24px)!important}
+@keyframes eu-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes eu-pop{0%{opacity:0;transform:scale(.8)}100%{opacity:1;transform:none}}
+@keyframes eu-rot{to{transform:rotate(360deg)}}
+@keyframes eu-dr{to{stroke-dashoffset:0}}
+@keyframes eu-shine{0%,55%{left:-60%}100%{left:130%}}
+@media (prefers-reduced-motion:reduce){.eu-bd,.eu-sh,.eu-row,.eu-big,.eu-sec{animation:none!important;transition:none!important}.eu-big::after{display:none}}
+`;
+let heroBox=null;
 function build(){
  if(root)root.remove();
- root=css(document.createElement('div'),'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;font-family:inherit');
- const card=css(document.createElement('div'),'width:100%;max-width:520px;max-height:88vh;overflow:auto;background:var(--bg2,#1c1c1e);color:var(--tx,#fff);border-radius:20px 20px 0 0;padding:18px 16px calc(env(safe-area-inset-bottom,0px) + 18px);box-sizing:border-box');
- const h=css(document.createElement('div'),'font-size:18px;font-weight:700;margin-bottom:10px');h.textContent='📲 Edi ni yangilash';
- logBox=css(document.createElement('div'),'display:flex;flex-direction:column;gap:6px;font-size:14px;line-height:1.4;margin-bottom:12px');
- btnBox=css(document.createElement('div'),'display:flex;flex-direction:column;gap:8px');
- card.append(h,logBox,btnBox);root.append(card);document.body.appendChild(root);
+ if(!document.getElementById('eu-css')){const st=document.createElement('style');st.id='eu-css';st.textContent=EU_CSS;document.head.appendChild(st)}
+ root=document.createElement('div');root.className='eu-bd';
+ root.innerHTML='<div class="eu-sh"><div class="eu-grab"></div><div class="eu-hd"><div class="eu-logo">'+svg('up',24)+'</div><h2>Edi ni yangilash<small>Fayllarni tanlang — qolganini Edi o‘zi qiladi</small></h2><button class="eu-cl" aria-label="Yopish">'+svg('x',16)+'</button></div><div class="eu-hero"></div><div class="eu-list"></div><div class="eu-btns"></div></div>';
+ const sh=root.firstChild;heroBox=sh.querySelector('.eu-hero');logBox=sh.querySelector('.eu-list');btnBox=sh.querySelector('.eu-btns');
+ sh.querySelector('.eu-cl').onclick=()=>{if(!busy)close()};
+ document.body.appendChild(root);
+ requestAnimationFrame(()=>requestAnimationFrame(()=>root&&root.classList.add('in')));
  root.addEventListener('click',e=>{if(e.target===root&&!busy)close()})}
-function close(){if(root){root.remove();root=null}token++}
+function close(){if(root){const r=root;r.classList.remove('in');setTimeout(()=>r.remove(),320);root=null}token++}
 function line(id,icon,text){
  if(!logBox)return;let el=id?logBox.querySelector('[data-id="'+id+'"]'):null;
- if(!el){el=document.createElement('div');if(id)el.dataset.id=id;logBox.appendChild(el)}
- el.textContent=icon+' '+text;return el}
+ const [h,tone]=icHtml(icon);
+ if(!el){el=document.createElement('div');el.className='eu-row';if(id)el.dataset.id=id;el.innerHTML='<span class="eu-ic"></span><span class="tx"></span>';logBox.appendChild(el)}
+ const ic=el.firstChild;if(ic.dataset.k!==String(icon)){ic.dataset.k=icon;ic.className='eu-ic '+tone+(ic.innerHTML?' pop':'');ic.innerHTML=h}
+ el.lastChild.textContent=text;
+ try{el.scrollIntoView({block:'nearest',behavior:'smooth'})}catch(e){}
+ return el}
 function clearLog(){if(logBox)logBox.innerHTML=''}
 function buttons(list){
- if(!btnBox)return;btnBox.innerHTML='';
- list.forEach(([label,fn,primary])=>{const b=css(document.createElement('button'),'padding:13px 14px;border-radius:12px;border:'+(primary?'none':'1px solid var(--sep2,#3a3a3c)')+';background:'+(primary?'var(--ac,#0a84ff)':'var(--s2,#2c2c2e)')+';color:'+(primary?'#fff':'inherit')+';font-size:15px;font-weight:600;text-align:left;cursor:pointer');
-  b.textContent=label;b.onclick=async()=>{try{await fn()}catch(e){line('err','❌',e.message||String(e));buttons([['⬅️ Orqaga',home],['Yopish',close]])}};btnBox.appendChild(b)})}
+ if(!btnBox)return;btnBox.innerHTML='';if(heroBox)heroBox.innerHTML='';
+ list.forEach(([label,fn,primary,sub])=>{
+  const em=(String(label).match(/^(\S+?)\s/)||[])[1]||'',txt=String(label).replace(/^\S+?\s/,'').trim()||label;
+  const known=EM[em]||NUM[em];const text=known?txt:String(label);
+  const [h,tone]=known?icHtml(em):['','n'];
+  const b=document.createElement('button');
+  if(primary){b.className='eu-big';b.innerHTML='<span class="eu-bi">'+(h||svg('up'))+'</span><span style="flex:1"><b></b>'+(sub?'<span class="s"></span>':'')+'</span>';b.querySelector('b').textContent=text;if(sub)b.querySelector('.s').textContent=sub;(heroBox||btnBox).appendChild(b)}
+  else{b.className='eu-sec';b.innerHTML=(h?'<span class="eu-ic '+tone+'">'+h+'</span>':'')+'<span class="tx"></span>';b.querySelector('.tx').textContent=text;btnBox.appendChild(b)}
+  b.onclick=async()=>{try{await fn()}catch(e){line('err','❌',e.message||String(e));buttons([['⬅️ Orqaga',home],['Yopish',close]])}}})}
 
 // ---------- bosh oyna
 window.EDI_WEB_VER='2026.10.04';
@@ -2096,10 +2194,9 @@ async function home(){
  line('t',my?'🔑':'⚠️',my?'GitHub token saqlangan':'GitHub token kiritilmagan (birinchi yangilashda so‘raladi)');
  lastRel().then(l=>{if(l)line('l',l.n>inst&&inst?'🆕':'✅','Eng yangi APK: '+l.tag+(l.n>inst&&inst?' — yangilash mumkin':' — eng yangi'))});
  buttons([
-  ['🔄 Yangilash',start,true],
+  ['⬆️ Yangilash',start,true,'index.html va make_apk.py ni tanlang'],
   ['🔑 Tokenni o‘zgartirish',()=>tokenFlow(null)],
   ['⬇️ Faqat yangi APK bormi, tekshirish',apkCheck],
-  ['↩️ Saytni oldingi versiyaga qaytarish',rollback],
   ['Yopish',close]])}
 
 // Yagona oqim: Token (kerak bo'lsa) → Fayl → Yangilanmoqda → Muvaffaqiyatli → O'rnatish
@@ -2111,7 +2208,7 @@ async function start(){
 async function tokenFlow(then){
  clearLog();
  line('i','🔑','GitHub token — bir marta kerak. Telefoningizda saqlanadi.');
- line('i2','1️⃣','Brauzerda oching: github.com/settings/tokens/new?scopes=repo');
+ line('i2','1️⃣','Brauzerda oching: github.com/settings/tokens/new?scopes=repo,workflow');
  line('i3','2️⃣','Pastdagi «Generate token» ni bosing, chiqqan ghp_… ni nusxalang');
  line('i4','3️⃣','Shu yerga qo‘ying:');
  const inp=css(document.createElement('input'),'width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid var(--sep2,#3a3a3c);background:var(--bg,#000);color:inherit;font-size:15px;margin-bottom:4px');
@@ -2122,6 +2219,8 @@ async function tokenFlow(then){
    const r=await fetch(API,{headers:H(v)});
    if(r.status===401){line('e','❌','Token noto‘g‘ri');return}
    if(!r.ok){line('e','❌','Repoga kirib bo‘lmadi ('+r.status+')');return}
+   const sc=r.headers.get('x-oauth-scopes');
+   if(sc!==null&&!/\bworkflow\b/.test(sc)){line('e','❌','Tokenda «workflow» belgisi yoqilmagan. Havoladagi ikkala belgi (repo, workflow) yoqilgan holda qayta yarating');return}
    const j=await r.json();
    if(!(j.permissions&&j.permissions.push)){line('e','❌','Token repoga yoza olmaydi. «repo» belgisini yoqib qayta yarating');return}
    tkSet(v);line('e','✅','Token to‘g‘ri va saqlandi');await sleepU(700);if(typeof then==='function')then();else home()},true],
@@ -2195,8 +2294,9 @@ async function runJobs(tk,todo){
  if(apk){
   await cleanDupes(tk);
   const td=Date.now();
-  const r=await fetch(API+'/actions/workflows/build.yml/dispatches',{method:'POST',headers:H(tk,{'Content-Type':'application/json'}),body:JSON.stringify({ref:'main'})});
-  if(r.status!==204)throw new Error('APK yig‘ishni boshlab bo‘lmadi ('+r.status+'). Token «workflow» ruxsatini ham talab qilishi mumkin');
+  let dst=0;for(let t=0;t<3&&dst!==204;t++){try{const r=await fetch(API+'/actions/workflows/build.yml/dispatches',{method:'POST',headers:H(tk,{'Content-Type':'application/json'}),body:JSON.stringify({ref:'main'})});dst=r.status}catch(e){dst=0}if(dst!==204)await sleepU(2500)}
+  if(dst!==204)throw new Error(dst===403||dst===404?'APK yig‘ishni boshlab bo‘lmadi ('+dst+'): tokenda «workflow» ruxsati yo‘q. «Tokenni o‘zgartirish» orqali repo + workflow belgili yangi token kiriting':'APK yig‘ishni boshlab bo‘lmadi ('+dst+'). Birozdan keyin qayta urinib ko‘ring');
+  try{AN&&AN.watchUpdate&&AN.watchUpdate(45)}catch(e){}
   try{localStorage.setItem('eduPend',JSON.stringify({t0,base}))}catch(e){}
   line('a','🏗','APK yig‘ish boshlandi…');
   if(web)watchPages(my,t0,true);
@@ -2214,7 +2314,7 @@ async function watchPages(my,t0,quiet){
      line('w','✅','Sayt yangilandi');
      if(quiet){line('w2','ℹ️','Qayta yuklash uchun pastdagi tugmani bosing');return}
      line('H','✅','Yangilanish muvaffaqiyatli');buttons([['✅ Yangilandi — qayta ochish',()=>location.reload(),true]]);return}
-    if(j.status==='errored'){line('w','❌','Sayt yig‘ishda GitHub xato berdi');buttons([['↩️ Oldingi versiyaga qaytarish',rollback],['Yopish',close]]);return}}}catch(e){}
+    if(j.status==='errored'){line('w','❌','Sayt yig‘ishda GitHub xato berdi');buttons([['Yopish',close]]);return}}}catch(e){}
   line('w','⏳','Sayt yangilanmoqda… '+fmt((Date.now()-t0)/1000))}
  line('w','⚠️','Sayt tekshiruvi tugamadi. Biroz kutib ilovani qayta oching');buttons([['Yopish',close]])}
 
