@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Edi APK loyihasini android/ papkasida yaratadi (GitHub Actions ishlatadi).
-# EDI-BUILD: 2026100410
+# EDI-BUILD: 2026100411
 import glob, os, shutil, sys
 
 ROOT = 'android'
@@ -128,6 +128,9 @@ F['app/src/main/AndroidManifest.xml'] = r'''<?xml version="1.0" encoding="utf-8"
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <package android:name="com.lutfullo.nanogram" />
+        <package android:name="com.lutfullo.edi" />
+        <package android:name="com.lutfullo.edi.user" />
     </queries>
 
     <application
@@ -1263,6 +1266,41 @@ class Bridge(base: Context, private val web: WebView, private val activity: Main
     fun update(mode: String): String {
         Thread { updateFlow(mode) }.start()
         return ""
+    }
+
+    // ------------------------------------------------------------ Ilovalarim (App Store)
+    private fun dl(m: String) { js("window.ediDl&&window.ediDl(" + JSONObject.quote(m) + ")") }
+
+    @JavascriptInterface
+    fun pkgVersion(pkg: String): String {
+        return try { ctx.packageManager.getPackageInfo(pkg, 0).versionName ?: "" } catch (e: Exception) { "" }
+    }
+
+    @JavascriptInterface
+    fun openPkg(pkg: String): Boolean {
+        val i = ctx.packageManager.getLaunchIntentForPackage(pkg) ?: return false
+        start(i)
+        return true
+    }
+
+    @JavascriptInterface
+    fun installApk(url: String, label: String) {
+        Thread {
+            try {
+                if (!ctx.packageManager.canRequestPackageInstalls()) {
+                    start(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + ctx.packageName)))
+                    dl("perm")
+                    return@Thread
+                }
+                dl("start")
+                val f = File(ctx.cacheDir, "store_app.apk")
+                download(url, f)
+                dl("install")
+                install(f)
+            } catch (e: Exception) {
+                dl("error:" + (e.message ?: "noma'lum"))
+            }
+        }.start()
     }
 
     // ------------------------------------------------------------ kalit, til, suzuvchi tugma
@@ -2733,6 +2771,392 @@ class InstallReceiver : BroadcastReceiver() {
 '''
 
 
+
+# ======================================================================
+# NanoGram APK (alohida loyiha: android-ng/) — WebView qobig'i
+# ======================================================================
+NG = {}
+NG_URL = 'https://nanogrampro.netlify.app/'
+NGK = 'app/src/main/java/com/lutfullo/nanogram/'
+NG_ICON_B64 = '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'
+
+NG['settings.gradle.kts'] = F['settings.gradle.kts'].replace('rootProject.name = "Edi"', 'rootProject.name = "NanoGram"')
+NG['build.gradle.kts'] = F['build.gradle.kts']
+NG['gradle.properties'] = F['gradle.properties']
+
+NG['app/build.gradle.kts'] = r'''plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+val runNum = (System.getenv("RUN_NUM") ?: "1").toInt()
+
+android {
+    namespace = "com.lutfullo.nanogram"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.lutfullo.nanogram"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = runNum
+        versionName = "1.0." + runNum
+    }
+
+    signingConfigs {
+        getByName("debug") {
+            val ks = rootProject.file("edi.keystore")
+            val pw = System.getenv("EDI_KS_PASS")
+            if (ks.exists() && !pw.isNullOrEmpty()) {
+                storeFile = ks
+                storePassword = pw
+                keyAlias = "edi"
+                keyPassword = pw
+                storeType = "pkcs12"
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+'''
+
+NG['app/src/main/AndroidManifest.xml'] = r'''<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <queries>
+        <package android:name="com.lutfullo.nanogram" />
+        <package android:name="com.lutfullo.edi" />
+        <package android:name="com.lutfullo.edi.user" />
+    </queries>
+
+    <application
+        android:label="NanoGram"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|screenLayout|smallestScreenSize|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".InstallReceiver"
+            android:exported="false" />
+    </application>
+</manifest>
+'''
+
+NG['app/src/main/res/values/strings.xml'] = r'''<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NanoGram</string>
+</resources>
+'''
+
+NG[NGK + 'MainActivity.kt'] = r'''package com.lutfullo.nanogram
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Color
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.webkit.CookieManager
+import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+
+class MainActivity : Activity() {
+    companion object {
+        const val HOME = "__NG_URL__"
+        const val RC_FILE = 11
+        const val RC_PERM = 12
+        const val RC_NOTIF = 13
+    }
+
+    private lateinit var web: WebView
+    private var fileCb: ValueCallback<Array<Uri>>? = null
+    private var pendingPerm: PermissionRequest? = null
+
+    @SuppressLint("SetJavaScriptEnabled")
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+        window.statusBarColor = Color.BLACK
+        window.navigationBarColor = Color.BLACK
+        val w = WebView(this)
+        web = w
+        setContentView(w)
+        w.setBackgroundColor(Color.BLACK)
+        val s = w.settings
+        s.javaScriptEnabled = true
+        s.domStorageEnabled = true
+        s.databaseEnabled = true
+        s.mediaPlaybackRequiresUserGesture = false
+        s.allowFileAccess = false
+        s.allowContentAccess = true
+        s.javaScriptCanOpenWindowsAutomatically = true
+        s.setSupportMultipleWindows(false)
+        s.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(w, true)
+        w.addJavascriptInterface(Bridge(this, w), "Android")
+
+        w.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(v: WebView?, r: WebResourceRequest?): Boolean {
+                val u = r?.url ?: return false
+                val sch = u.scheme ?: ""
+                val host = u.host ?: ""
+                if (sch == "http" || sch == "https") {
+                    val inner = host.endsWith("netlify.app") || host.endsWith("firebaseapp.com") ||
+                        host.endsWith("google.com") || host.endsWith("gstatic.com") ||
+                        host.endsWith("googleapis.com") || host.endsWith("firebaseio.com")
+                    if (inner) return false
+                }
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, u))
+                } catch (e: ActivityNotFoundException) {
+                }
+                return true
+            }
+        }
+
+        w.webChromeClient = object : WebChromeClient() {
+            override fun onPermissionRequest(req: PermissionRequest?) {
+                if (req == null) return
+                runOnUiThread {
+                    val need = ArrayList<String>()
+                    for (r in req.resources) {
+                        if (r == PermissionRequest.RESOURCE_VIDEO_CAPTURE) need.add(Manifest.permission.CAMERA)
+                        if (r == PermissionRequest.RESOURCE_AUDIO_CAPTURE) need.add(Manifest.permission.RECORD_AUDIO)
+                    }
+                    val miss = need.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+                    if (miss.isEmpty()) {
+                        req.grant(req.resources)
+                    } else {
+                        pendingPerm?.deny()
+                        pendingPerm = req
+                        requestPermissions(miss.toTypedArray(), RC_PERM)
+                    }
+                }
+            }
+
+            override fun onShowFileChooser(v: WebView?, cb: ValueCallback<Array<Uri>>?, p: FileChooserParams?): Boolean {
+                fileCb?.onReceiveValue(null)
+                fileCb = cb
+                try {
+                    startActivityForResult(p!!.createIntent(), RC_FILE)
+                } catch (e: Exception) {
+                    fileCb = null
+                    return false
+                }
+                return true
+            }
+        }
+
+        w.setDownloadListener { url, _, _, _, _ ->
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            } catch (e: Exception) {
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), RC_NOTIF)
+        }
+
+        if (b == null) w.loadUrl(HOME) else w.restoreState(b)
+    }
+
+    override fun onSaveInstanceState(o: Bundle) {
+        super.onSaveInstanceState(o)
+        web.saveState(o)
+    }
+
+    override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
+        super.onRequestPermissionsResult(code, perms, res)
+        if (code == RC_PERM) {
+            val r = pendingPerm
+            pendingPerm = null
+            if (r != null) {
+                var all = res.isNotEmpty()
+                for (x in res) if (x != PackageManager.PERMISSION_GRANTED) all = false
+                if (all) r.grant(r.resources) else r.deny()
+            }
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(code: Int, res: Int, data: Intent?) {
+        super.onActivityResult(code, res, data)
+        if (code == RC_FILE) {
+            fileCb?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(res, data))
+            fileCb = null
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (web.canGoBack()) web.goBack() else super.onBackPressed()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        web.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        web.onResume()
+    }
+}
+'''.replace('__NG_URL__', NG_URL)
+
+NG[NGK + 'Bridge.kt'] = r'''package com.lutfullo.nanogram
+
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageInstaller
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import org.json.JSONObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+
+// Ilovalarim (App Store) uchun: o'rnatilgan ilovalarni tekshirish, ochish, APK yuklab o'rnatish
+class Bridge(base: Context, private val web: WebView) {
+    private val ctx: Context = base.applicationContext
+
+    private fun js(code: String) { web.post { web.evaluateJavascript(code, null) } }
+    private fun dl(m: String) { js("window.ediDl&&window.ediDl(" + JSONObject.quote(m) + ")") }
+    private fun start(i: Intent) { i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); ctx.startActivity(i) }
+
+    @JavascriptInterface
+    fun version(): String {
+        return try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
+    }
+
+    @JavascriptInterface
+    fun pkgVersion(pkg: String): String {
+        return try { ctx.packageManager.getPackageInfo(pkg, 0).versionName ?: "" } catch (e: Exception) { "" }
+    }
+
+    @JavascriptInterface
+    fun openPkg(pkg: String): Boolean {
+        val i = ctx.packageManager.getLaunchIntentForPackage(pkg) ?: return false
+        start(i)
+        return true
+    }
+
+    @JavascriptInterface
+    fun installApk(url: String, label: String) {
+        Thread {
+            try {
+                if (!ctx.packageManager.canRequestPackageInstalls()) {
+                    start(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + ctx.packageName)))
+                    dl("perm")
+                    return@Thread
+                }
+                dl("start")
+                val f = File(ctx.cacheDir, "store_app.apk")
+                val c = URL(url).openConnection() as HttpURLConnection
+                c.connectTimeout = 15000
+                c.readTimeout = 30000
+                c.setRequestProperty("User-Agent", "NanoGramApp")
+                if (c.responseCode !in 200..299) throw Exception("Yuklab bo'lmadi: " + c.responseCode)
+                c.inputStream.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+                dl("install")
+                install(f)
+            } catch (e: Exception) {
+                dl("error:" + (e.message ?: "noma'lum"))
+            }
+        }.start()
+    }
+
+    private fun install(f: File) {
+        val pi = ctx.packageManager.packageInstaller
+        val p = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        p.setSize(f.length())
+        val id = pi.createSession(p)
+        val ses = pi.openSession(id)
+        ses.openWrite("app.apk", 0L, f.length()).use { o ->
+            f.inputStream().use { it.copyTo(o) }
+            ses.fsync(o)
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+        val pend = PendingIntent.getBroadcast(ctx, id, Intent(ctx, InstallReceiver::class.java), flags)
+        ses.commit(pend.intentSender)
+        ses.close()
+    }
+}
+'''
+
+NG[NGK + 'InstallReceiver.kt'] = r'''package com.lutfullo.nanogram
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageInstaller
+import android.widget.Toast
+
+class InstallReceiver : BroadcastReceiver() {
+    @Suppress("DEPRECATION")
+    override fun onReceive(c: Context, i: Intent) {
+        val st = i.getIntExtra(PackageInstaller.EXTRA_STATUS, -1)
+        if (st == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            val a = i.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+            if (a != null) {
+                a.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                try { c.startActivity(a) } catch (e: Exception) {}
+            }
+        } else if (st != PackageInstaller.STATUS_SUCCESS) {
+            val m = i.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: st.toString()
+            Toast.makeText(c, "O'rnatilmadi: " + m, Toast.LENGTH_LONG).show()
+        }
+    }
+}
+'''
+
+
 def write(path, content):
     full = os.path.join(ROOT, path)
     os.makedirs(os.path.dirname(full), exist_ok=True)
@@ -2756,6 +3180,21 @@ def main():
     for p, c in F.items():
         write(p, c)
 
+    # NanoGram loyihasi (android-ng/)
+    import base64
+    ngr = 'android-ng'
+    if os.path.isdir(ngr):
+        shutil.rmtree(ngr)
+    for p2, c2 in NG.items():
+        full2 = os.path.join(ngr, p2)
+        os.makedirs(os.path.dirname(full2), exist_ok=True)
+        with open(full2, 'w', encoding='utf-8') as f2:
+            f2.write(c2)
+    icp = os.path.join(ngr, 'app/src/main/res/mipmap-xxxhdpi/ic_launcher.png')
+    os.makedirs(os.path.dirname(icp), exist_ok=True)
+    with open(icp, 'wb') as f3:
+        f3.write(base64.b64decode(NG_ICON_B64))
+
     html = pick(['index*.html'], 'index.html')
     if not html:
         sys.exit('XATO: index.html topilmadi')
@@ -2765,6 +3204,7 @@ def main():
     ks = pick(['edi*.keystore'], 'edi.keystore')
     if ks:
         shutil.copy(ks, os.path.join(ROOT, 'edi.keystore'))
+        shutil.copy(ks, os.path.join('android-ng', 'edi.keystore'))
         print('Keystore:', ks)
     else:
         print('OGOHLANTIRISH: keystore yoq, debug kalit ishlatiladi (yangilash uchun eski ilovani ochirish kerak boladi)')
