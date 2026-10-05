@@ -1,36 +1,47 @@
+# EDI-BUILD: 2026100410
 name: Build APK
+
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/build.yml'
+
 permissions:
   contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
       - name: Loyihani yaratish
-        run: |
-          python3 "$(grep -l 'Edi APK loyihasini' *.py | head -1)"
-      - name: APK yigish
+        run: python3 "$(grep -l 'Edi APK loyihasini' *.py | head -1)"
+
+      - name: APK qurish (egasi + foydalanuvchi)
         working-directory: android
         env:
           RUN_NUM: ${{ github.run_number }}
           EDI_KS_PASS: ${{ secrets.EDI_KS_PASS }}
-        run: gradle assembleDebug --no-daemon --stacktrace
-      - name: Nomlash
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk Edi_v1.0.${{ github.run_number }}.apk
-      - uses: softprops/action-gh-release@v2
+        run: gradle assembleOwnerDebug assembleUserDebug --no-daemon
+
+      - name: Fayllarni yig'ish
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/owner/debug/*.apk "out/Edi_v1.0.${{ github.run_number }}.apk"
+          cp android/app/build/outputs/apk/user/debug/*.apk "out/Edi_User_v1.0.${{ github.run_number }}.apk"
+          ls -la out
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: Edi v1.0.${{ github.run_number }}
-          files: Edi_v1.0.${{ github.run_number }}.apk
+          files: out/*.apk
