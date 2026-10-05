@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#0a0a0a">
 <title>Edi</title>
-<meta name="edi-build" content="2026100410">
+<meta name="edi-build" content="2026100411">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <style>
@@ -1658,6 +1658,7 @@ let WL=null;
 N(/o'?chmasin|uxlamasin|yonib\s*tur/,[],async()=>{try{WL=await navigator.wakeLock.request('screen');return "☀️ Ekran o'chmaydi"}catch(e){return "⚠️ Qo'llanmaydi"}});
 N(/ekran\w*\s*o'?chsin|uxlasin/,[],async()=>{try{if(WL)await WL.release()}catch(e){}WL=null;return '🌙 Ekran odatdagidek'});
 N(/qorong'?i\s*rejim|tungi\s*rejim/,[],()=>{C.th='dark';applyUI();save();return "🌙 Qorong'i rejim"});
+N(/ilovalarim|app\s*store|ilovalar\s*do'?kon\w*|nanogram\w*\s*(yukla|o'?rnat|ol\b)|nanogramni\s*(yukla|o'?rnat)/,[],()=>{try{EdiStore.open()}catch(e){return 'Do‘kon ochilmadi'}return 'Ilovalarim ochildi'});
 N(/avto\w*\s*(rejim|mavzu)|tizim\w*\s*(rejim|mavzu)/,[],()=>{C.th='auto';applyUI();save();return "🌓 Avto rejim"});
 N(/yorug'?\s*rejim|kunduzgi\s*rejim/,[],()=>{C.th='light';applyUI();save();return "☀️ Yorug' rejim"});
 N(/yangi\s*suhbat/,[],()=>{$('new').click();return '✅ Yangi suhbat'});
@@ -1721,7 +1722,8 @@ setTimeout(()=>{try{if(window.__BG||!AN||!AN.update)return;const d=new Date().to
 const GH_REPO='lutfullossr-creator/Edi';
 const ghH=tk=>({Authorization:'Bearer '+tk,Accept:'application/vnd.github+json'});
 const ghTok=()=>{let tk=localStorage.getItem('edigh');if(!tk){tk=(prompt("GitHub token kiriting (bir marta kerak).\n\n1) github.com/settings/tokens/new?scopes=repo,workflow oching\n2) pastda 'Generate token' bosing\n3) ghp_... ni shu yerga qo'ying")||'').trim();if(tk)localStorage.setItem('edigh',tk)}return tk};
-const kindOf=f=>{const t=String((f&&f.text)||'').replace(/^\uFEFF/,'');const html=/<html[\s>]/i.test(t)&&/<\/html>/i.test(t)&&/function EDI_CMD/.test(t);const py=/Edi APK loyihasini/.test(t.slice(0,800))&&(t.match(/^F\[/gm)||[]).length>=5;const yml=/^name:\s*Build APK/m.test(t)&&/workflow_dispatch/.test(t)&&/assemble\w*Debug/.test(t);return html&&!py&&!yml?'index.html':py&&!html&&!yml?'make_apk.py':yml&&!html&&!py?'build.yml':null};
+const WF_TEXT="# EDI-BUILD: 2026100411\nname: Build APK\n\non:\n  workflow_dispatch:\n\npermissions:\n  contents: write\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n\n      - uses: actions/setup-java@v4\n        with:\n          distribution: temurin\n          java-version: '17'\n\n      - uses: gradle/actions/setup-gradle@v4\n        with:\n          gradle-version: '8.9'\n\n      - name: Loyihani yaratish\n        run: python3 \"$(grep -l 'Edi APK loyihasini' *.py | head -1)\"\n\n      - name: APK qurish (egasi + foydalanuvchi)\n        working-directory: android\n        env:\n          RUN_NUM: ${{ github.run_number }}\n          EDI_KS_PASS: ${{ secrets.EDI_KS_PASS }}\n        run: gradle assembleOwnerDebug assembleUserDebug --no-daemon\n\n      - name: NanoGram APK qurish\n        continue-on-error: true\n        working-directory: android-ng\n        env:\n          RUN_NUM: ${{ github.run_number }}\n          EDI_KS_PASS: ${{ secrets.EDI_KS_PASS }}\n        run: gradle assembleDebug --no-daemon\n\n      - name: Fayllarni yig'ish\n        run: |\n          mkdir -p out\n          cp android/app/build/outputs/apk/owner/debug/*.apk \"out/Edi_v1.0.${{ github.run_number }}.apk\"\n          cp android/app/build/outputs/apk/user/debug/*.apk \"out/Edi_User_v1.0.${{ github.run_number }}.apk\"\n          if ls android-ng/app/build/outputs/apk/debug/*.apk >/dev/null 2>&1; then\n            cp android-ng/app/build/outputs/apk/debug/*.apk \"out/NanoGram_v1.0.${{ github.run_number }}.apk\"\n          fi\n          ls -la out\n\n      - name: Release\n        uses: softprops/action-gh-release@v2\n        with:\n          tag_name: v1.0.${{ github.run_number }}\n          name: Edi v1.0.${{ github.run_number }}\n          files: out/*.apk\n";
+const kindOf=f=>{const t=String((f&&f.text)||'').replace(/^\uFEFF/,'');try{if(/^\s*\{/.test(t)){const o=JSON.parse(t);if(o&&Array.isArray(o.apps)&&o.apps.length&&o.apps.every(a=>a&&a.name&&a.pkg))return 'apps.json'}}catch(e){}const html=/<html[\s>]/i.test(t)&&/<\/html>/i.test(t)&&/function EDI_CMD/.test(t);const py=/Edi APK loyihasini/.test(t.slice(0,800))&&(t.match(/^F\[/gm)||[]).length>=5;const yml=/^name:\s*Build APK/m.test(t)&&/workflow_dispatch/.test(t)&&/assemble\w*Debug/.test(t);return html&&!py&&!yml?'index.html':py&&!html&&!yml?'make_apk.py':yml&&!html&&!py?'build.yml':null};
 const stampOf=(k,t)=>{t=String(t||'');const m=k!=='index.html'?t.match(/^# EDI-BUILD: (\d{6,})/m):t.match(/<meta name="edi-build" content="(\d{6,})"/);return m?+m[1]:0};
 const pickFiles=()=>new Promise(res=>{const i=document.createElement('input');i.type='file';i.multiple=true;i.style.display='none';document.body.appendChild(i);
  i.onchange=async()=>{const out=[];for(const f of i.files)out.push({name:f.name,text:await f.text()});i.remove();res(out)};
@@ -2322,16 +2324,18 @@ async function doPick(){
  line('c','⏳','GitHub bilan solishtirilmoqda…');
  for(const j of jobs){const cur=await remoteText(tk,rp(j.k));j.same=cur.text!==null&&cur.text===j.text;j.old=cur.text}
  for(const j of jobs){j.nb=stampOf(j.k,j.text);j.cb=stampOf(j.k,j.old)}
- const top=Math.max(0,...jobs.map(j=>j.nb),...jobs.map(j=>j.cb));
+ const top=Math.max(0,...jobs.filter(j=>j.k!=='apps.json').map(j=>j.nb),...jobs.filter(j=>j.k!=='apps.json').map(j=>j.cb));
  for(const j of jobs){
-  if(j.same)continue;
+  if(j.same||j.k==='apps.json')continue;
   if(j.nb<j.cb){j.stale=1;line('s'+j.k,'🛑',j.k+' — ESKI versiya (build '+(j.nb||'raqamsiz')+'), GitHubdagisi yangiroq ('+j.cb+'). Yangisini buzmaslik uchun yuklanmaydi')}
   else if(jobs.length>1&&j.nb<top){j.stale=1;line('s'+j.k,'🛑',j.k+' — boshqa fayldan eskiroq (build '+(j.nb||'raqamsiz')+' ≠ '+top+'). Juftlik aralashib ketmasligi uchun yuklanmaydi')}}
  const okJobs=jobs.filter(j=>!j.stale);
  if(!okJobs.length){line('n','❌','Yuklanadigan yangi fayl yo‘q');buttons([['⬅️ Orqaga',home],['Yopish',close]]);return}
  jobs.length=0;okJobs.forEach(j=>jobs.push(j));
+ if(jobs.some(j=>j.k==='make_apk.py')){try{const wr=await remoteText(tk,rp('build.yml'));
+  if(stampOf('build.yml',wr.text)<stampOf('build.yml',WF_TEXT)){jobs.push({k:'build.yml',text:WF_TEXT,old:wr.text,same:false,nb:stampOf('build.yml',WF_TEXT),cb:stampOf('build.yml',wr.text),name:'build.yml'})}}catch(e){}}
  line('c','📋','Natija:');
- jobs.forEach(j=>line('j'+j.k,j.same?'➖':'⬆️',j.k+' ('+kb(j.text)+(j.nb?', build '+j.nb:'')+') — '+(j.same?'o‘zgarmagan, o‘tkazib yuboriladi':j.k!=='index.html'?'yangilanadi → yangi APK yig‘iladi':'yangilanadi → sayt 1–2 daqiqada yangilanadi')));
+ jobs.forEach(j=>line('j'+j.k,j.same?'➖':'⬆️',j.k+' ('+kb(j.text)+(j.nb?', build '+j.nb:'')+') — '+(j.same?'o‘zgarmagan, o‘tkazib yuboriladi':(j.k!=='index.html'&&j.k!=='apps.json')?'yangilanadi → yangi APK yig‘iladi':'yangilanadi → sayt 1–2 daqiqada yangilanadi')));
  const todo=jobs.filter(j=>!j.same);
  if(!todo.length){line('z','✅','Hammasi allaqachon eng yangi versiyada');buttons([['⬅️ Orqaga',home],['Yopish',close]]);return}
  await sleepU(600);return runJobs(tk,todo)}
@@ -2354,7 +2358,7 @@ async function runJobs(tk,todo){
   if(j.k==='index.html'&&j.old){try{await put(tk,'backup/index.prev.html',j.old,'Edi: zaxira nusxa')}catch(e){}}
   await put(tk,rp(j.k),j.text,'Edi yangilash: '+j.k);
   line('u'+j.k,'✅',j.k+' yuklandi');
-  if(j.k!=='index.html')apk=true;else web=true}
+  if(j.k==='index.html'||j.k==='apps.json')web=true;else apk=true}
  if(apk){
   await cleanDupes(tk);
   const td=Date.now();
@@ -2535,6 +2539,103 @@ sh.addEventListener('touchend',end,{passive:true});sh.addEventListener('touchcan
   const b=document.getElementById('ab_bld');if(b&&m)b.textContent='· build '+m.content}catch(e){}};
  fill();const sb=document.getElementById('smod');if(sb)new MutationObserver(fill).observe(sb,{attributes:true,attributeFilter:['class']});
 }catch(e){}})();
+/* ===== Ilovalarim — kichik App Store (Lutfullo loyihalari) ===== */
+(function(){
+if(window.EdiStore)return;
+var CAT_URL='https://lutfullossr-creator.github.io/Edi/apps.json';
+var DEF=[
+ {id:'nanogram',name:'NanoGram',desc:'Xabar almashish va ijtimoiy tarmoq',pkg:'com.lutfullo.nanogram',repo:'lutfullossr-creator/Edi',asset:'^NanoGram_',colors:['#7c4dff','#0a84ff'],icon:'chat',web:'https://nanogrampro.netlify.app/'},
+ {id:'edi',name:'Edi',desc:'Ovozli telefon boshqaruvi va sun’iy intellekt yordamchi',pkg:'com.lutfullo.edi.user',alt:['com.lutfullo.edi'],repo:'lutfullossr-creator/Edi',asset:'^Edi_User_',colors:['#2563eb','#7c4dff'],icon:'bot'}
+];
+var IC={
+ chat:'<path d="M5 5.5h14a2 2 0 012 2v8a2 2 0 01-2 2h-6.5L8 20.5V17.5H5a2 2 0 01-2-2v-8a2 2 0 012-2z"/><path d="M9 11v.01M15 11v.01"/>',
+ bot:'<rect x="4" y="8" width="16" height="11" rx="3.5"/><path d="M12 8V5M9.5 13v.01M14.5 13v.01M9.5 16.2h5"/><circle cx="12" cy="4" r="1"/>',
+ game:'<rect x="3" y="7" width="18" height="11" rx="4"/><path d="M8 10.5v4M6 12.5h4M15.5 11v.01M17.5 13.5v.01"/>',
+ tool:'<path d="M14.5 6.2a4 4 0 005.3 5.3L11 20.3a2.4 2.4 0 01-3.4-3.4z"/>',
+ box:'<path d="M20.5 7.8L12 3.2 3.5 7.8v8.4l8.5 4.6 8.5-4.6z"/><path d="M3.8 8l8.2 4.5L20.2 8M12 12.5v8"/>',
+ store:'<path d="M4 9l1.6-4.5h12.8L20 9"/><path d="M4 9a2.7 2.7 0 005.3 0 2.7 2.7 0 005.4 0A2.7 2.7 0 0020 9"/><path d="M5.5 12v7.5h13V12M10 19.5v-4h4v4"/>',
+ x:'<path d="M7 7l10 10M17 7L7 17"/>',
+ down:'<path d="M12 4.5V15M7.5 10.5L12 15l4.5-4.5"/><path d="M4.5 19.5h15"/>',
+ open:'<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2h4"/>',
+ refresh:'<path d="M19.5 11.5a7.5 7.5 0 10-2.2 5.4"/><path d="M19.8 4.5v6.2h-6.2"/>'
+};
+function svg(n,s){return '<svg viewBox="0 0 24 24" width="'+(s||22)+'" height="'+(s||22)+'" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(IC[n]||IC.box)+'</svg>'}
+var AN=window.Android||null,root=null,list=null,cat=null,rel={};
+function dark(){try{var c=getComputedStyle(document.body).backgroundColor.match(/\d+(\.\d+)?/g);if(!c)return true;var l=(0.2126*c[0]+0.7152*c[1]+0.0722*c[2])/255;return l<0.55}catch(e){return true}}
+var CSS='.es-bd{position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .28s;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif}'
++'.es-bd.in{opacity:1}.es-sh{width:100%;max-width:520px;max-height:92vh;overflow:auto;border-radius:28px 28px 0 0;padding:8px 16px calc(env(safe-area-inset-bottom,0px) + 18px);box-sizing:border-box;transform:translateY(100%);transition:transform .42s cubic-bezier(.32,.72,0,1);box-shadow:0 -10px 40px rgba(0,0,0,.35);background:var(--b);color:var(--t)}'
++'.es-bd.in .es-sh{transform:none}.es-bd.d{--b:#141416;--c:#1f1f23;--t:#f2f2f7;--t2:#8e8e93;--s:rgba(255,255,255,.08)}.es-bd.l{--b:#f2f2f7;--c:#fff;--t:#111;--t2:#6b6b70;--s:rgba(0,0,0,.08)}'
++'.es-g{width:38px;height:5px;border-radius:3px;background:var(--t2);opacity:.45;margin:4px auto 12px}'
++'.es-h{display:flex;align-items:center;gap:12px;margin-bottom:14px}.es-lg{width:44px;height:44px;border-radius:13px;background:linear-gradient(135deg,#7c4dff,#0a84ff);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(10,132,255,.35)}'
++'.es-h h2{margin:0;flex:1;font-size:20px;font-weight:700;letter-spacing:-.3px}.es-h small{display:block;font-size:12px;font-weight:500;color:var(--t2);margin-top:2px}'
++'.es-x{width:32px;height:32px;border:0;border-radius:50%;background:var(--c);color:var(--t2);display:flex;align-items:center;justify-content:center;cursor:pointer}.es-x:active{transform:scale(.88)}'
++'.es-card{display:flex;align-items:center;gap:12px;padding:12px;border-radius:20px;background:var(--c);margin-bottom:10px;animation:es-in .4s cubic-bezier(.32,.72,0,1) both}'
++'.es-ic{flex:0 0 56px;width:56px;height:56px;border-radius:16px;color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(0,0,0,.25)}'
++'.es-tx{flex:1;min-width:0}.es-tx b{display:block;font-size:16px;font-weight:700}.es-tx span{display:block;font-size:12.5px;color:var(--t2);line-height:1.35;margin-top:2px}.es-tx i{display:block;font-style:normal;font-size:11.5px;color:var(--t2);margin-top:4px;opacity:.85}'
++'.es-b{flex:0 0 auto;min-width:92px;border:0;border-radius:99px;padding:9px 14px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;color:#fff;background:linear-gradient(135deg,#0a84ff,#5e5ce6);transition:transform .15s}'
++'.es-b:active{transform:scale(.94)}.es-b.o{background:var(--s);color:#0a84ff}.es-b.w{background:var(--s);color:var(--t2);pointer-events:none}'
++'.es-ft{text-align:center;font-size:11.5px;color:var(--t2);margin-top:8px}.es-em{text-align:center;color:var(--t2);padding:24px 0;font-size:14px}'
++'@keyframes es-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}@media (prefers-reduced-motion:reduce){.es-sh,.es-card{animation:none!important;transition:none!important}}';
+function num(s){var m=String(s||'').match(/(\d+)\D*$/);return m?+m[1]:0}
+function jget(u){return fetch(u,{headers:{Accept:'application/vnd.github+json'}}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})}
+function loadCat(){
+ if(cat)return Promise.resolve(cat);
+ return fetch(CAT_URL+'?t='+Math.floor(Date.now()/600000)).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){cat=(j&&j.apps&&j.apps.length)?j.apps:DEF;return cat}).catch(function(){cat=DEF;return cat})}
+function loadRel(repo){
+ if(rel[repo])return rel[repo];
+ return rel[repo]=jget('https://api.github.com/repos/'+repo+'/releases/latest').catch(function(){return null})}
+function inst(a){
+ if(!AN||!AN.pkgVersion)return {v:'',pk:''};
+ var all=[a.pkg].concat(a.alt||[]);
+ for(var i=0;i<all.length;i++){try{var v=AN.pkgVersion(all[i]);if(v)return {v:v,pk:all[i]}}catch(e){}}
+ return {v:'',pk:''}}
+function card(a,k){
+ var el=document.createElement('div');el.className='es-card';el.style.animationDelay=(k*70)+'ms';
+ var c=a.colors||['#7c4dff','#0a84ff'];
+ el.innerHTML='<div class="es-ic" style="background:linear-gradient(135deg,'+c[0]+','+c[1]+')">'+svg(a.icon||'box',28)+'</div><div class="es-tx"><b></b><span></span><i>Tekshirilmoqda…</i></div><button class="es-b w">…</button>';
+ el.querySelector('b').textContent=a.name;el.querySelector('span').textContent=a.desc||'';
+ var info=el.querySelector('i'),btn=el.querySelector('button');
+ function set(t,cls,ic){btn.className='es-b '+(cls||'');btn.innerHTML=(ic?svg(ic,16):'')+'<span></span>';btn.lastChild.textContent=t}
+ var st=inst(a);
+ function resolve(){
+  return (a.repo?loadRel(a.repo):Promise.resolve(null)).then(function(r){
+   var as=null;if(r&&r.assets){var re=new RegExp(a.asset||'\\.apk$');for(var i=0;i<r.assets.length;i++){if(re.test(r.assets[i].name)&&/\.apk$/.test(r.assets[i].name)){as=r.assets[i];break}}}
+   var url=a.url||(as&&as.browser_download_url)||'',tag=r?r.tag_name:'',n=num(tag);
+   var isAlt=st.pk&&st.pk!==a.pkg;
+   if(st.v&&(isAlt||!url||num(st.v)>=n||!n)){
+    info.textContent='O‘rnatilgan: v'+st.v+(isAlt?' (egasi versiyasi)':(n&&num(st.v)>=n?' · eng yangisi':''));
+    set('Ochish','o','open');btn.onclick=function(){try{AN.openPkg(st.pk)}catch(e){}};return}
+   if(!url){info.textContent=a.web?'Veb-versiya mavjud':'Tez orada';if(a.web){set('Veb','o','open');btn.onclick=function(){window.open(a.web,'_blank')}}else set('Tez orada','w');return}
+   info.textContent=(st.v?'Yangi versiya: '+tag+' (sizda v'+st.v+')':(tag?'Versiya: '+tag:'APK'));
+   set(st.v?'Yangilash':'Yuklash',null,st.v?'refresh':'down');
+   btn.onclick=function(){
+    if(AN&&AN.installApk){window.__esBtn={set:set,info:info,n:a.name};try{AN.installApk(url,a.name)}catch(e){info.textContent='Xato: '+e.message}}
+    else{window.open(url,'_blank')}}})}
+ resolve();return el}
+window.ediDl=function(m){var b=window.__esBtn;if(!b)return;m=String(m);
+ if(m==='start'){b.set('Yuklanmoqda','w');b.info.textContent='⬇️ Yuklab olinmoqda…'}
+ else if(m==='install'){b.set('O‘rnatilmoqda','w');b.info.textContent='Telefon «O‘rnatish» ni so‘raydi — bosing'}
+ else if(m==='perm'){b.set('Qayta bosing','o');b.info.textContent='«Shu manbadan o‘rnatish» ni yoqing, so‘ng qayta bosing'}
+ else if(m.indexOf('error:')===0){b.set('Qayta urinish','o');b.info.textContent='Xato: '+m.slice(6)}};
+function close(){if(root){var r=root;r.classList.remove('in');setTimeout(function(){r.remove()},320);root=null}}
+function open(){
+ AN=window.Android||null;
+ if(!document.getElementById('es-css')){var s=document.createElement('style');s.id='es-css';s.textContent=CSS;document.head.appendChild(s)}
+ if(root)root.remove();
+ root=document.createElement('div');root.className='es-bd '+(dark()?'d':'l');
+ root.innerHTML='<div class="es-sh"><div class="es-g"></div><div class="es-h"><div class="es-lg">'+svg('store',24)+'</div><h2>Ilovalarim<small>Lutfullo loyihalari — bir joyda</small></h2><button class="es-x" aria-label="Yopish">'+svg('x',16)+'</button></div><div class="es-l"></div><div class="es-ft">© Lutfullo</div></div>';
+ list=root.querySelector('.es-l');root.querySelector('.es-x').onclick=close;
+ root.addEventListener('click',function(e){if(e.target===root)close()});
+ document.body.appendChild(root);
+ requestAnimationFrame(function(){requestAnimationFrame(function(){root&&root.classList.add('in')})});
+ list.innerHTML='<div class="es-em">Yuklanmoqda…</div>';
+ loadCat().then(function(c){list.innerHTML='';if(!c.length){list.innerHTML='<div class="es-em">Hozircha ilova yo‘q</div>';return}c.forEach(function(a,k){list.appendChild(card(a,k))})})}
+window.EdiStore={open:open,close:close};
+})();
+
+try{(function(){const a=document.getElementById('about');if(!a)return;
+ a.insertAdjacentHTML('beforebegin','<button class="fbtn" id="storebtn"><svg class="icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.6-4.5h12.8L20 9"/><path d="M4 9a2.7 2.7 0 005.3 0 2.7 2.7 0 005.4 0A2.7 2.7 0 0020 9"/><path d="M5.5 12v7.5h13V12M10 19.5v-4h4v4"/></svg> Ilovalarim (App Store)</button>');
+ document.getElementById('storebtn').onclick=()=>{document.getElementById('smod').classList.remove('on');EdiStore.open()}})()}catch(e){}
 </script>
 </body>
 </html>
