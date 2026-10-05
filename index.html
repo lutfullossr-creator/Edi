@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#0a0a0a">
 <title>Edi</title>
-<meta name="edi-build" content="2026100408">
+<meta name="edi-build" content="2026100410">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <style>
@@ -1225,10 +1225,16 @@ async function blobToWav(blob){
   for(let i=0;i<d.length;i++){const v=Math.max(-1,Math.min(1,d[i]));dv.setInt16(44+i*2,v<0?v*0x8000:v*0x7FFF,true)}
   return new Blob([dv.buffer],{type:'audio/wav'})}
 const b64of=b=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=no;r.readAsDataURL(b)});
+let _gm=null;
+async function geminiModels(){if(_gm)return _gm;const fb=['gemini-2.5-flash','gemini-2.0-flash'];let out=['gemini-flash-latest'];
+ try{const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',{headers:{'x-goog-api-key':C.gk}});
+  if(r.ok){const j=await r.json();const ms=(j.models||[]).filter(m=>(m.supportedGenerationMethods||[]).join().includes('generateContent')&&/^models\/gemini-[\d.]+-flash$/.test(m.name)).map(m=>m.name.slice(7));
+   ms.sort((x,y)=>parseFloat(y.match(/[\d.]+/)[0])-parseFloat(x.match(/[\d.]+/)[0]));out=out.concat(ms.slice(0,3),fb);_gm=[...new Set(out)];return _gm}}catch(e){}
+ return [...new Set(out.concat(fb))]}
 async function transcribeGemini(blob){
   let wav;try{wav=await blobToWav(blob)}catch(e){wav=blob}
   const data=await b64of(wav),mime=wav.type||blob.type||'audio/webm';let err='';
-  for(const mdl of ['gemini-2.5-flash','gemini-2.0-flash']){
+  for(const mdl of await geminiModels()){
     try{const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+mdl+':generateContent',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':C.gk},
       body:JSON.stringify({contents:[{parts:[{text:GPROMPT},{inline_data:{mime_type:mime,data}}]}],generationConfig:{temperature:0}})});
       if(r.ok){const j=await r.json();return(((j.candidates||[{}])[0].content||{parts:[{}]}).parts[0].text||'').trim()}
@@ -1474,6 +1480,7 @@ function parseAlarm(q){q=String(q||'').toLowerCase();
  if(hh<12&&/kech|tushdan\s*keyin|peshin|oqshom/.test(q))hh+=12;
  if(hh>23||mm>59)return false;
  return hh+':'+mm}
+const OWNER=()=>{try{return !!(AN&&(AN.isOwner?AN.isOwner():true))}catch(e){return false}};
 const ACT=(n,a='')=>AN&&AN.act?AN.act(n,a):"📱 Bu buyruq faqat APK da ishlaydi";
 window.ediVoice=t=>{if(!t)return;$('inp').value=t;send()};
 CMDS.push(
@@ -1714,8 +1721,8 @@ setTimeout(()=>{try{if(window.__BG||!AN||!AN.update)return;const d=new Date().to
 const GH_REPO='lutfullossr-creator/Edi';
 const ghH=tk=>({Authorization:'Bearer '+tk,Accept:'application/vnd.github+json'});
 const ghTok=()=>{let tk=localStorage.getItem('edigh');if(!tk){tk=(prompt("GitHub token kiriting (bir marta kerak).\n\n1) github.com/settings/tokens/new?scopes=repo,workflow oching\n2) pastda 'Generate token' bosing\n3) ghp_... ni shu yerga qo'ying")||'').trim();if(tk)localStorage.setItem('edigh',tk)}return tk};
-const kindOf=f=>{const t=String((f&&f.text)||'').replace(/^\uFEFF/,'');const html=/<html[\s>]/i.test(t)&&/<\/html>/i.test(t)&&/function EDI_CMD/.test(t);const py=/Edi APK loyihasini/.test(t.slice(0,800))&&(t.match(/^F\[/gm)||[]).length>=5;return html&&!py?'index.html':py&&!html?'make_apk.py':null};
-const stampOf=(k,t)=>{t=String(t||'');const m=k==='make_apk.py'?t.match(/^# EDI-BUILD: (\d{6,})/m):t.match(/<meta name="edi-build" content="(\d{6,})"/);return m?+m[1]:0};
+const kindOf=f=>{const t=String((f&&f.text)||'').replace(/^\uFEFF/,'');const html=/<html[\s>]/i.test(t)&&/<\/html>/i.test(t)&&/function EDI_CMD/.test(t);const py=/Edi APK loyihasini/.test(t.slice(0,800))&&(t.match(/^F\[/gm)||[]).length>=5;const yml=/^name:\s*Build APK/m.test(t)&&/workflow_dispatch/.test(t)&&/assemble\w*Debug/.test(t);return html&&!py&&!yml?'index.html':py&&!html&&!yml?'make_apk.py':yml&&!html&&!py?'build.yml':null};
+const stampOf=(k,t)=>{t=String(t||'');const m=k!=='index.html'?t.match(/^# EDI-BUILD: (\d{6,})/m):t.match(/<meta name="edi-build" content="(\d{6,})"/);return m?+m[1]:0};
 const pickFiles=()=>new Promise(res=>{const i=document.createElement('input');i.type='file';i.multiple=true;i.style.display='none';document.body.appendChild(i);
  i.onchange=async()=>{const out=[];for(const f of i.files)out.push({name:f.name,text:await f.text()});i.remove();res(out)};
  i.oncancel=()=>{i.remove();res([])};i.click()});
@@ -1732,7 +1739,7 @@ async function ghDispatch(tk){
  if(r.status!==204)throw new Error("APK yig'ishni boshlab bo'lmadi ("+r.status+")")
 }
 const relNum=t=>{const m=String(t||'').match(/(\d+)$/);return m?+m[1]:0};
-const lastRel=async()=>{try{const r=await fetch('https://api.github.com/repos/'+GH_REPO+'/releases/latest',{headers:{Accept:'application/vnd.github+json'}});if(!r.ok)return null;const j=await r.json();const a=(j.assets||[]).find(x=>/\.apk$/.test(x.name));return{n:relNum(j.tag_name),tag:j.tag_name,url:a?a.browser_download_url:''}}catch(e){return null}};
+const lastRel=async()=>{try{const r=await fetch('https://api.github.com/repos/'+GH_REPO+'/releases/latest',{headers:{Accept:'application/vnd.github+json'}});if(!r.ok)return null;const j=await r.json();const a=(j.assets||[]).find(x=>/\.apk$/.test(x.name)&&(/_User_/.test(x.name)===!OWNER()));return{n:relNum(j.tag_name),tag:j.tag_name,url:a?a.browser_download_url:''}}catch(e){return null}};
 function waitApk(base){
  const t0=Date.now();
  const tick=async()=>{
@@ -1771,7 +1778,7 @@ window.EDI_UPDATE=async()=>{try{
   else{const l=await lastRel();if(l&&l.url&&confirm("Eng so'nggi APK: "+l.tag+"\n\nYuklab olamizmi?"))window.open(l.url,'_blank')}
  }
 }catch(e){toast('⚠️ '+(e.message||e),7000)}};
-N(/fayl\w*\s*(bilan|dan|orqali)?\s*yangila|edini\s*yangila/,[],()=>{window.EDI_UPDATE();return '📂 Yangilash boshlandi'});
+N(/fayl\w*\s*(bilan|dan|orqali)?\s*yangila|edini\s*yangila/,[],()=>{if(!OWNER())return 'Bu imkoniyat faqat Edi egasi uchun';window.EDI_UPDATE();return '📂 Yangilash boshlandi'});
 
 // ===== Kengaytirilgan ovozli boshqaruv v2 =====
 KW.push('skroll','pastga','tepaga','eslatma','obhavo','kalkulyator','nusxa','youtube','yozing','bosing');
@@ -2202,9 +2209,10 @@ function build(){
  if(root)root.remove();
  if(!document.getElementById('eu-css')){const st=document.createElement('style');st.id='eu-css';st.textContent=EU_CSS;document.head.appendChild(st)}
  root=document.createElement('div');root.className='eu-bd';
- root.innerHTML='<div class="eu-sh"><div class="eu-grab"></div><div class="eu-hd"><div class="eu-logo">'+svg('up',24)+'</div><h2>Edi ni yangilash<small>Fayllarni tanlang — qolganini Edi o‘zi qiladi</small></h2><button class="eu-cl" aria-label="Yopish">'+svg('x',16)+'</button></div><div class="eu-hero"></div><div class="eu-list"></div><div class="eu-btns"></div></div>';
+ root.innerHTML='<div class="eu-sh"><div class="eu-grab"></div><div class="eu-hd"><div class="eu-logo">'+svg('up',24)+'</div><h2>Edi ni yangilash<small id="eu-sub">Fayllarni tanlang — qolganini Edi o‘zi qiladi</small></h2><button class="eu-cl" aria-label="Yopish">'+svg('x',16)+'</button></div><div class="eu-hero"></div><div class="eu-list"></div><div class="eu-btns"></div></div>';
  const sh=root.firstChild;heroBox=sh.querySelector('.eu-hero');logBox=sh.querySelector('.eu-list');btnBox=sh.querySelector('.eu-btns');
  sh.querySelector('.eu-cl').onclick=()=>{if(!busy)close()};
+ if(!OWNER()){const s=root.querySelector('#eu-sub');if(s)s.textContent='Yangi versiyani tekshirish va o‘rnatish'}
  document.body.appendChild(root);
  requestAnimationFrame(()=>requestAnimationFrame(()=>root&&root.classList.add('in')));
  root.addEventListener('click',e=>{if(e.target===root&&!busy)close()})}
@@ -2233,6 +2241,11 @@ function buttons(list){
 window.EDI_WEB_VER='2026.10.04 · build '+((document.querySelector('meta[name=edi-build]')||{}).content||'?');
 async function home(){
  clearLog();busy=false;
+ if(!OWNER()){
+  const inst0=instNum();
+  line('v','📦','Versiya: '+(inst0?('v1.0.'+inst0):'noma’lum'));
+  lastRel().then(l=>{if(l)line('l',l.n>inst0&&inst0?'🆕':'✅','Eng yangi: '+l.tag+(l.n>inst0&&inst0?' — yangilash mumkin':' — sizda eng yangisi'))});
+  buttons([['⬇️ Yangilanishni tekshirish',apkCheck,true,'Faqat Edi egasi tasdiqlagan versiya'],['Yopish',close]]);return}
  const my=tkGet(),inst=instNum();
  line('v','📦','APK versiyasi: '+(inst?('v1.0.'+inst):'noma’lum (brauzerda)'));
  line('w','🌐','Sayt versiyasi: '+window.EDI_WEB_VER);
@@ -2246,11 +2259,13 @@ async function home(){
 
 // Yagona oqim: Token (kerak bo'lsa) → Fayl → Yangilanmoqda → Muvaffaqiyatli → O'rnatish
 async function start(){
+ if(!OWNER())return home();
  if(!tkGet())return tokenFlow(filesFlow);
  clearLog();return doPick()}
 
 // ---------- token
 async function tokenFlow(then){
+ if(!OWNER())return home();
  clearLog();
  line('i','🔑','GitHub token — bir marta kerak. Telefoningizda saqlanadi.');
  line('i2','1️⃣','Brauzerda oching: github.com/settings/tokens/new?scopes=repo,workflow');
@@ -2273,6 +2288,7 @@ async function tokenFlow(then){
 
 // ---------- fayllar bilan yangilash
 function jsOk(html){const re=/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/gi;let m,i=0;while((m=re.exec(html))){i++;try{new Function(m[1])}catch(e){return 'script '+i+': '+e.message}}return ''}
+const RPATH={'build.yml':'.github/workflows/build.yml'};const rp=k=>RPATH[k]||k;
 async function remoteText(tk,path){
  const r=await fetch(API+'/contents/'+path+'?ref=main',{headers:H(tk)});
  if(r.status===404)return{sha:undefined,text:null};
@@ -2286,9 +2302,11 @@ async function put(tk,path,text,msg){
  return cur.text}
 
 async function filesFlow(){
+ if(!OWNER())return home();
  const tk=tkGet();if(!tk)return tokenFlow(filesFlow);
  clearLog();line('p','📂','Yangilanadigan fayl(lar)ni tanlang: index.html va/yoki make_apk.py');buttons([['📂 Fayllarni tanlash',doPick,true],['⬅️ Orqaga',home]])}
 async function doPick(){
+ if(!OWNER())return home();
  const tk=tkGet();buttons([]);
  line('pk','⏳','Fayl tanlash oynasi ochilmoqda…');
  const fs=await pickFiles();
@@ -2302,7 +2320,7 @@ async function doPick(){
   jobs.push({k,text:f.text,name:f.name})}
  if(!jobs.length){line('n','❌','Yuklanadigan fayl yo‘q');buttons([['⬅️ Orqaga',home],['Yopish',close]]);return}
  line('c','⏳','GitHub bilan solishtirilmoqda…');
- for(const j of jobs){const cur=await remoteText(tk,j.k);j.same=cur.text!==null&&cur.text===j.text;j.old=cur.text}
+ for(const j of jobs){const cur=await remoteText(tk,rp(j.k));j.same=cur.text!==null&&cur.text===j.text;j.old=cur.text}
  for(const j of jobs){j.nb=stampOf(j.k,j.text);j.cb=stampOf(j.k,j.old)}
  const top=Math.max(0,...jobs.map(j=>j.nb),...jobs.map(j=>j.cb));
  for(const j of jobs){
@@ -2313,7 +2331,7 @@ async function doPick(){
  if(!okJobs.length){line('n','❌','Yuklanadigan yangi fayl yo‘q');buttons([['⬅️ Orqaga',home],['Yopish',close]]);return}
  jobs.length=0;okJobs.forEach(j=>jobs.push(j));
  line('c','📋','Natija:');
- jobs.forEach(j=>line('j'+j.k,j.same?'➖':'⬆️',j.k+' ('+kb(j.text)+(j.nb?', build '+j.nb:'')+') — '+(j.same?'o‘zgarmagan, o‘tkazib yuboriladi':j.k==='make_apk.py'?'yangilanadi → yangi APK yig‘iladi':'yangilanadi → sayt 1–2 daqiqada yangilanadi')));
+ jobs.forEach(j=>line('j'+j.k,j.same?'➖':'⬆️',j.k+' ('+kb(j.text)+(j.nb?', build '+j.nb:'')+') — '+(j.same?'o‘zgarmagan, o‘tkazib yuboriladi':j.k!=='index.html'?'yangilanadi → yangi APK yig‘iladi':'yangilanadi → sayt 1–2 daqiqada yangilanadi')));
  const todo=jobs.filter(j=>!j.same);
  if(!todo.length){line('z','✅','Hammasi allaqachon eng yangi versiyada');buttons([['⬅️ Orqaga',home],['Yopish',close]]);return}
  await sleepU(600);return runJobs(tk,todo)}
@@ -2334,9 +2352,9 @@ async function runJobs(tk,todo){
  for(const j of todo){
   line('u'+j.k,'⏳',j.k+' yuklanmoqda…');
   if(j.k==='index.html'&&j.old){try{await put(tk,'backup/index.prev.html',j.old,'Edi: zaxira nusxa')}catch(e){}}
-  await put(tk,j.k,j.text,'Edi yangilash: '+j.k);
+  await put(tk,rp(j.k),j.text,'Edi yangilash: '+j.k);
   line('u'+j.k,'✅',j.k+' yuklandi');
-  if(j.k==='make_apk.py')apk=true;else web=true}
+  if(j.k!=='index.html')apk=true;else web=true}
  if(apk){
   await cleanDupes(tk);
   const td=Date.now();
@@ -2415,7 +2433,7 @@ setTimeout(async()=>{try{if(window.__BG)return;const p=JSON.parse(localStorage.g
 
 try{$('expall').insertAdjacentHTML('beforebegin','<button class="fbtn" id="permbtn"><svg class="icon" aria-hidden="true"><use href="#i-lock"></use></svg> Ruxsatlarni tekshirish va berish</button>');
 $('permbtn').onclick=()=>{$('smod').classList.remove('on');$('inp').value='barcha ruxsatlarni ber';send()};
-$('permbtn').insertAdjacentHTML('afterend','<button class="fbtn" id="updbtn">📲 Edi ni yangilash</button>');$('updbtn').onclick=()=>{$('smod').classList.remove('on');window.EDI_UPDATE()}}catch(e){}
+$('permbtn').insertAdjacentHTML('afterend','<button class="fbtn" id="updbtn">'+(OWNER()?'📲 Edi ni yangilash':'📲 Yangilanishni tekshirish')+'</button>');$('updbtn').onclick=()=>{$('smod').classList.remove('on');window.EDI_UPDATE()}}catch(e){}
 })();
 </script>
 <script>

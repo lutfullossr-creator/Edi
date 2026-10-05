@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Edi APK loyihasini android/ papkasida yaratadi (GitHub Actions ishlatadi).
-# EDI-BUILD: 2026100408
+# EDI-BUILD: 2026100410
 import glob, os, shutil, sys
 
 ROOT = 'android'
@@ -68,6 +68,21 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+
+    buildFeatures { buildConfig = true }
+
+    flavorDimensions += "role"
+    productFlavors {
+        create("owner") {
+            dimension = "role"
+            buildConfigField("boolean", "OWNER", "true")
+        }
+        create("user") {
+            dimension = "role"
+            applicationIdSuffix = ".user"
+            buildConfigField("boolean", "OWNER", "false")
+        }
+    }
 }
 '''
 
@@ -1173,7 +1188,8 @@ class Bridge(base: Context, private val web: WebView, private val activity: Main
         if (arr != null) {
             for (i in 0 until arr.length()) {
                 val a = arr.getJSONObject(i)
-                if (a.optString("name").endsWith(".apk")) { url = a.optString("browser_download_url"); break }
+                val nm = a.optString("name")
+                if (nm.endsWith(".apk") && nm.contains("_User_") == !BuildConfig.OWNER) { url = a.optString("browser_download_url"); break }
             }
         }
         return Triple(n, tag, url)
@@ -1235,6 +1251,10 @@ class Bridge(base: Context, private val web: WebView, private val activity: Main
 
     @JavascriptInterface
     fun version(): String = curName()
+
+    // true = egasining APK si (yangilash/o'zgartirish bor), false = oddiy foydalanuvchi APK si
+    @JavascriptInterface
+    fun isOwner(): Boolean = BuildConfig.OWNER
 
     @JavascriptInterface
     fun watchUpdate(minutes: Int) { UpdateWatch.fast(ctx, minutes) }
@@ -1831,10 +1851,49 @@ object Stt {
     const val GPROMPT = "Bu telefonni boshqarish uchun aytilgan qisqa o'zbek tilidagi ovozli buyruq. Gapni aynan eshitilganidek, o'zbek LOTIN alifbosida (o', g', sh, ch, ng) yoz. Faqat matnni yoz, izoh yozma. Agar gap bo'lmasa bo'sh qoldir. Tez-tez uchraydigan so'zlar: Edi, fonar, yoq, o'chir, musiqa, qo'y, qo'shiq, ovoz, balandla, pasaytir, och, yop, ilova, qo'ng'iroq, sms, yoz, skrinshot, yorqinlik, kontakt, top, tarjima, budilnik, taymer, ob-havo, Telegram, Instagram, YouTube, WhatsApp, kamera, galereya, sozlamalar, wifi, bluetooth, batareya, pastga, tepaga, bos, orqaga, bosh ekran, diktant."
 
     // Gemini: o'zbekchani Whisper'dan yaxshiroq tushunadi
+    private var gemCache: List<String>? = null
+
+    private fun gemModels(key: String): List<String> {
+        val cached = gemCache
+        if (cached != null) return cached
+        val out = ArrayList<String>()
+        out.add("gemini-flash-latest")
+        try {
+            val c = URL("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200").openConnection() as HttpURLConnection
+            c.connectTimeout = 10000
+            c.readTimeout = 15000
+            c.setRequestProperty("x-goog-api-key", key)
+            if (c.responseCode == 200) {
+                val arr = JSONObject(c.inputStream.bufferedReader().use { it.readText() }).optJSONArray("models")
+                val found = ArrayList<Pair<Double, String>>()
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        val m = arr.getJSONObject(i)
+                        val name = m.optString("name").removePrefix("models/")
+                        val ok = m.optJSONArray("supportedGenerationMethods")?.toString()?.contains("generateContent") == true
+                        val mt = Regex("^gemini-([0-9.]+)-flash$").find(name)
+                        if (ok && mt != null) found.add(Pair(mt.groupValues[1].toDoubleOrNull() ?: 0.0, name))
+                    }
+                }
+                found.sortByDescending { it.first }
+                for (p in found.take(3)) out.add(p.second)
+                out.add("gemini-2.5-flash")
+                out.add("gemini-2.0-flash")
+                val res = out.distinct()
+                gemCache = res
+                return res
+            }
+        } catch (e: Exception) {
+        }
+        out.add("gemini-2.5-flash")
+        out.add("gemini-2.0-flash")
+        return out.distinct()
+    }
+
     fun gemini(key: String, f: File): String {
         val b64 = android.util.Base64.encodeToString(f.readBytes(), android.util.Base64.NO_WRAP)
         var err = "noma'lum xato"
-        for (model in arrayOf("gemini-2.5-flash", "gemini-2.0-flash")) {
+        for (model in gemModels(key)) {
             for (mime in arrayOf("audio/mp4", "audio/aac")) {
                 try {
                     val body = JSONObject().put("contents", org.json.JSONArray().put(JSONObject().put("parts", org.json.JSONArray()
